@@ -162,6 +162,7 @@ int main(int argc, char *argv[])
                                             CUFFT_R2C, // type
                                             num_padded // batch size
                                            );
+    cufftSetCompatibilityMode(fwd_plan, CUFFT_COMPATIBILITY_NATIVE);
     
     cufftHandle inv_plan;
     cufftPlanMany(&inv_plan, // plan
@@ -171,7 +172,7 @@ int main(int argc, char *argv[])
                   CUFFT_C2R, // type
                   num_images * num_kernels // batch size
                  );
-
+     cufftSetCompatibilityMode(inv_plan, CUFFT_COMPATIBILITY_NATIVE); // needed to prevent extra padding, so output looks natural
 
     // ok, the data is on the gpu; the plans are made; start the timer
     uint32 num_iterations = 10000;
@@ -243,7 +244,7 @@ int main(int argc, char *argv[])
 
     // do inverse fft
     cufftReal *inverse_transformed;
-    cudaMalloc((void**)&inverse_transformed, sizeof(cufftReal) * num_images * num_kernels * padded_rows * padded_cols);
+    inverse_transformed = (cufftReal *)multiplied;
 
     cufftExecC2R(inv_plan, multiplied, inverse_transformed);
 
@@ -257,7 +258,6 @@ int main(int argc, char *argv[])
     cudaFree(fft_input);
     cudaFree(transformed);
     cudaFree(multiplied);
-    cudaFree(inverse_transformed);
 
     ////////////////////////////////////////////////////////////////////
     //} // end timing-iteration for loop
