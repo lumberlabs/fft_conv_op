@@ -210,9 +210,7 @@ int main(int argc, char *argv[])
                                                             kernel_cols,
                                                             padded_rows,
                                                             padded_cols);
-
-
-    /****************** 11s to here *************/
+    
     // perform forward fft
     uint32 transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
 
@@ -224,8 +222,6 @@ int main(int argc, char *argv[])
         fprintf(stderr, "fwd fft failed: %i", fwd_result);
     }
 
-    /****************** 11s to here, too! *************/
-
     // do elemwise multiplication
     cufftComplex *multiplied;
     // this memory will be re-used when the C2R transform is done in place, so make sure there's enough space
@@ -235,8 +231,6 @@ int main(int argc, char *argv[])
 
     dim3 dim_grid(num_images, num_kernels);
     elementwise_image_kernel_multiply<<<dim_grid, padded_rows * transformed_cols>>>(transformed, multiplied, num_images, num_kernels, padded_rows * transformed_cols);
-
-    /****************** 13s to here *************/
 
     // do inverse fft
     cufftReal *inverse_transformed;
@@ -250,7 +244,6 @@ int main(int argc, char *argv[])
                                                                                        1.0f / (padded_rows * padded_cols),
                                                                                        num_images * num_kernels * padded_rows * padded_cols);
 
-    /****************** 15s to here *************/
     cudaFree(fft_input);
 #if RUN_SPEED_TESTS
     cudaFree(transformed);
