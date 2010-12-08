@@ -212,21 +212,6 @@ int main(int argc, char *argv[])
                                                             padded_cols);
 
 
-                                                        
-    // fprintf(stderr, "FFT INPUT\n");
-    //     float fi[num_padded][padded_rows][padded_cols];
-    //     cudaMemcpy(fi, fft_input, sizeof(cufftReal) * num_padded * padded_rows * padded_cols, cudaMemcpyDeviceToHost);
-    //     for(uint32 padded_index = 0; padded_index < num_padded; padded_index++) {
-    //         for(uint32 r = 0; r < padded_rows; r++) {
-    //             for(uint32 c = 0; c < padded_cols; c++) {
-    //                 fprintf(stderr, "%.0f ", fi[padded_index][r][c]);
-    //             }
-    //             fprintf(stderr, "\n");
-    //         }
-    //         fprintf(stderr, "\n");
-    //     }
-                                                        
-
     /****************** 11s to here *************/
     // perform forward fft
     uint32 transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
