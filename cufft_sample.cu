@@ -9,6 +9,9 @@
 #include <unistd.h>
 #include <time.h>
 
+#define ALLOC_MEMORY_IN_LOOP 0
+#define FREE_IN_LOOP 0
+
 // TODO: Why are these necessary? What's wrong with stdint.h??
 typedef unsigned int uint32;
 typedef int int32;
@@ -127,6 +130,7 @@ int main(int argc, char *argv[])
     uint32 num_padded = num_images + num_kernels;
     uint32 padded_rows = next_power_of_two(image_rows + kernel_rows - 1);
     uint32 padded_cols = next_power_of_two(image_cols + kernel_cols - 1);
+    uint32 transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
 
     // set up images
     cufftReal images[num_images][image_rows][image_cols];
@@ -158,7 +162,6 @@ int main(int argc, char *argv[])
     cudaMalloc((void**)&inbound_kernels, sizeof(cufftReal) * num_kernels * kernel_rows * kernel_cols);
     cudaMemcpy(inbound_kernels, kernels, sizeof(cufftReal) * num_kernels * kernel_rows * kernel_cols, cudaMemcpyHostToDevice);
 
-
     // assume we can pay the planning price just once and amortize it away, so do the planning up front
     int32 padded_dimensions[2] = {padded_rows, padded_cols};
 
@@ -183,10 +186,30 @@ int main(int argc, char *argv[])
      cufftSetCompatibilityMode(inv_plan, CUFFT_COMPATIBILITY_NATIVE); // needed to prevent extra padding, so output looks natural
 
     // ok, the data is on the gpu; the plans are made; start the timer
-    uint32 num_iterations = 100000;
+#if ALLOC_MEMORY_IN_LOOP && FREE_IN_LOOP
+    uint32 num_iterations = 10;
+#else
+    uint32 num_iterations = 10;
+#endif
     time_t start, end;
 
     start = time(NULL);
+
+#if ALLOC_MEMORY_IN_LOOP
+#else
+    // pre-allocating memory; will be released in bulk later
+    cufftReal *fft_input;
+    cudaMalloc((void**)&fft_input, sizeof(cufftReal) * num_padded * padded_rows * padded_cols);
+
+    cufftComplex *transformed;
+    cudaMalloc((void**)&transformed, sizeof(cufftComplex) * num_padded * padded_rows * transformed_cols);
+
+    cufftComplex *multiplied;
+    // this memory will be re-used when the C2R transform is done in place, so make sure there's enough space
+    uint32 multiplied_size = sizeof(cufftComplex) * num_images * num_kernels * padded_rows * transformed_cols;
+    uint32 inverse_transformed_size = sizeof(cufftReal) * num_images * num_kernels * padded_rows * padded_cols;
+    cudaMalloc((void**)&multiplied, max(multiplied_size, inverse_transformed_size));
+#endif
 
 
 #if RUN_SPEED_TESTS
@@ -196,8 +219,10 @@ int main(int argc, char *argv[])
     // rearrange images and kernels to their new padded size, all contiguous
     // to each other, since that is what the batched fft requires right now
     
+#if ALLOC_MEMORY_IN_LOOP
     cufftReal *fft_input;
     cudaMalloc((void**)&fft_input, sizeof(cufftReal) * num_padded * padded_rows * padded_cols);
+#endif
     
     dim3 padding_threads(padded_rows, padded_cols);
     pad_images_and_kernels<<<num_padded, padding_threads>>>(inbound_images,
@@ -212,19 +237,22 @@ int main(int argc, char *argv[])
                                                             padded_cols);
     
     // perform forward fft
-    uint32 transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
 
+#if ALLOC_MEMORY_IN_LOOP
     cufftComplex *transformed;
     cudaMalloc((void**)&transformed, sizeof(cufftComplex) * num_padded * padded_rows * transformed_cols);
+#endif
 
     cufftResult fwd_result = cufftExecR2C(fwd_plan, fft_input, transformed);
 
+#if ALLOC_MEMORY_IN_LOOP
     // do elemwise multiplication
     cufftComplex *multiplied;
     // this memory will be re-used when the C2R transform is done in place, so make sure there's enough space
     uint32 multiplied_size = sizeof(cufftComplex) * num_images * num_kernels * padded_rows * transformed_cols;
     uint32 inverse_transformed_size = sizeof(cufftReal) * num_images * num_kernels * padded_rows * padded_cols;
     cudaMalloc((void**)&multiplied, max(multiplied_size, inverse_transformed_size));
+#endif
 
     dim3 dim_grid(num_images, num_kernels);
     elementwise_image_kernel_multiply<<<dim_grid, padded_rows * transformed_cols>>>(transformed, multiplied, num_images, num_kernels, padded_rows * transformed_cols);
@@ -241,20 +269,38 @@ int main(int argc, char *argv[])
                                                                                        1.0f / (padded_rows * padded_cols),
                                                                                        num_images * num_kernels * padded_rows * padded_cols);
 
+#if ALLOC_MEMORY_IN_LOOP && FREE_IN_LOOP
     cudaFree(fft_input);
 #if RUN_SPEED_TESTS
     cudaFree(transformed);
     cudaFree(multiplied);
 #endif
+#endif // ALLOC_MEMORY_IN_LOOP
 
 #if RUN_SPEED_TESTS
     } // end timing-iteration for loop
+#endif
+
+#if ALLOC_MEMORY_IN_LOOP
+#else
+    cudaFree(fft_input);
+    cudaFree(transformed);
+    cudaFree(multiplied);
 #endif
 
     // all the calculations are (basically) done, at least for full mode
     // stop the timer
     end = time(NULL);
 
+#if ALLOC_MEMORY_IN_LOOP
+#if FREE_IN_LOOP
+    fprintf(stderr, "allocing and freeing memory in loop\n");
+#else
+    fprintf(stderr, "allocing but not freeing memory in loop\n");
+#endif
+#else
+    fprintf(stderr, "not allocing memory in loop\n");
+#endif
     fprintf(stderr, 
             "%i %ix%i images, %i %ix%i kernels: %.0fsec elapsed for %i iterations (%f sec/iter)\n",
             num_images,
@@ -270,7 +316,7 @@ int main(int argc, char *argv[])
 #if RUN_SPEED_TESTS
 #else
 
-    // TODO: Set strides appropriately or do memcpys to get rid of unneeded padding
+    // TODO: Set strides appropriately (or do memcpys to get rid of unneeded padding)
     float results[num_images][num_kernels][padded_rows][padded_cols];
     // copy results back to host
     cudaMemcpy(results, inverse_transformed, sizeof(cufftReal) * num_images * num_kernels * padded_rows * padded_cols, cudaMemcpyDeviceToHost);
