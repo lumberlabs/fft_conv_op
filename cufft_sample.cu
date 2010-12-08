@@ -137,28 +137,20 @@ uint32 max_threads_per_block() {
 // NB: This will die at runtime sometimes in cuda 3.1 due to
 // data alignment issues -- see http://forums.nvidia.com/index.php?showtopic=176207&mode=linearplus
 // TODO: Don't use it w/ 3.1. (How to detect?)
-int main(int argc, char *argv[])
-{
-    // general cuda setup and prep
-    int threads_per_block = max_threads_per_block();
-
+int main(int argc, char *argv[]) {
 #if RUN_SPEED_TESTS
-    uint32 batch_size = 50;
+    uint32 batch_size = 500;
     uint32 num_images = 1;
-    uint32 image_rows = 8;
-    uint32 image_cols = 8;
+    uint32 image_rows = 28;
+    uint32 image_cols = 28;
+    uint32 num_kernels = 50;
+    uint32 kernel_rows = 5;
+    uint32 kernel_cols = 5;
 #else
     uint32 batch_size = 1;
     uint32 num_images = 4;
     uint32 image_rows = 4;
     uint32 image_cols = 4;
-#endif
-
-#if RUN_SPEED_TESTS
-    uint32 num_kernels = 20;
-    uint32 kernel_rows = 5;
-    uint32 kernel_cols = 5;
-#else
     uint32 num_kernels = 2;
     uint32 kernel_rows = 2;
     uint32 kernel_cols = 2;
