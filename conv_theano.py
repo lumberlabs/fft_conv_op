@@ -42,7 +42,7 @@ if __name__ == "__main__":
     for x in xrange(batch_size):
         sub_images = []
         for y in xrange(num_images):
-            sub_images.append(one_image * y)
+            sub_images.append(one_image * (y + 1))
         images.append(sub_images)
     test_images = numpy.asarray(images)
     # test_images = numpy.ones((batch_size, num_images, image_dim, image_dim), dtype=theano.config.floatX)
