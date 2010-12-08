@@ -218,9 +218,6 @@ int main(int argc, char *argv[])
     cudaMalloc((void**)&transformed, sizeof(cufftComplex) * num_padded * padded_rows * transformed_cols);
 
     cufftResult fwd_result = cufftExecR2C(fwd_plan, fft_input, transformed);
-    if(fwd_result != CUFFT_SUCCESS) {
-        fprintf(stderr, "fwd fft failed: %i", fwd_result);
-    }
 
     // do elemwise multiplication
     cufftComplex *multiplied;
