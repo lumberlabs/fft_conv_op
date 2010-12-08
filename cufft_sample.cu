@@ -232,8 +232,6 @@ int main(int argc, char *argv[])
     uint32 multiplied_size = sizeof(cufftComplex) * num_images * num_kernels * padded_rows * transformed_cols;
     uint32 inverse_transformed_size = sizeof(cufftReal) * num_images * num_kernels * padded_rows * padded_cols;
     cudaMalloc((void**)&multiplied, max(multiplied_size, inverse_transformed_size));
-    cudaMemset(multiplied, 0xFF, sizeof(cufftComplex) * num_images * num_kernels * padded_rows * transformed_cols); // TODO: DEBUGGING ONLY!
-
 
     dim3 dim_grid(num_images, num_kernels);
     elementwise_image_kernel_multiply<<<dim_grid, padded_rows * transformed_cols>>>(transformed, multiplied, num_images, num_kernels, padded_rows * transformed_cols);
