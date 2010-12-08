@@ -13,6 +13,48 @@
 typedef unsigned int uint32;
 typedef int int32;
 
+
+// TODO: optimize me
+__global__ void pad_images_and_kernels(cufftReal *images,
+                                       cufftReal *kernels,
+                                       cufftReal *dest,
+                                       uint32 num_images,
+                                       uint32 image_rows,
+                                       uint32 image_cols,
+                                       uint32 kernel_rows,
+                                       uint32 kernel_cols,
+                                       uint32 padded_rows,
+                                       uint32 padded_cols) {
+    uint32 row_index = threadIdx.x;
+    uint32 col_index = threadIdx.y;
+    uint32 ik_offset = blockIdx.x;
+
+    uint32 source_rows;
+    uint32 source_cols;
+    cufftReal *src;
+    uint32 src_offset;
+    if(ik_offset < num_images) {
+        source_rows = image_rows;
+        source_cols = image_cols;
+        src = images;
+        src_offset = ik_offset;
+    } else {
+        source_rows = kernel_rows;
+        source_cols = kernel_cols;
+        src = kernels;
+        src_offset = ik_offset - num_images;
+    }
+
+    cufftReal out;
+    if(row_index >= source_rows || col_index >= source_cols) {
+        out = 0.0f;
+    } else {
+        out = src[src_offset * source_rows * source_cols + row_index * source_cols + col_index];
+    }
+    
+    dest[ik_offset * padded_rows * padded_cols + row_index * padded_cols + col_index] = out;
+}
+
 // TODO: optimize me more
 // TODO: what happens when element_length is bigger than the allowed num threads?
 __global__ void elementwise_image_kernel_multiply(cufftComplex *transformed,
@@ -66,11 +108,11 @@ int main(int argc, char *argv[])
     // general cuda setup and prep
     int threads_per_block = max_threads_per_block();
     
-    uint32 num_images = 50;
+    uint32 num_images = 2; //50;
     uint32 image_rows = 8;
     uint32 image_cols = 8;
 
-    uint32 num_kernels = 20;
+    uint32 num_kernels = 2; //20;
     uint32 kernel_rows = 5;
     uint32 kernel_cols = 5;
 
@@ -138,34 +180,42 @@ int main(int argc, char *argv[])
     start = time(NULL);
 
     
-    for(uint32 iteration = 0; iteration < num_iterations; iteration++) {
+    //for(uint32 iteration = 0; iteration < num_iterations; iteration++) {
     ////////////////////////////////////////////////////////////////////
 
     // rearrange images and kernels to their new padded size, all contiguous
     // to each other, since that is what the batched fft requires right now
     
-    // TODO: Would writing a custom kernel to do this memory shuffling be faster?
     cufftReal *fft_input;
     cudaMalloc((void**)&fft_input, sizeof(cufftReal) * num_padded * padded_rows * padded_cols);
-    cudaMemset(fft_input, 0, sizeof(cufftReal) * num_padded * padded_rows * padded_cols);
+    
+    dim3 padding_threads(padded_rows, padded_cols);
+    pad_images_and_kernels<<<num_padded, padding_threads>>>(inbound_images,
+                                                            inbound_kernels,
+                                                            fft_input,
+                                                            num_images,
+                                                            image_rows,
+                                                            image_cols,
+                                                            kernel_rows,
+                                                            kernel_cols,
+                                                            padded_rows,
+                                                            padded_cols);
 
-    for(int b = 0; b < num_images; b++) {
-        for(int r = 0; r < image_rows; r++) {
-            cudaMemcpy(fft_input + b * padded_rows * padded_cols + r * padded_cols,
-                       inbound_images + b * image_rows * image_cols + r * image_cols,
-                       sizeof(cufftReal) * image_cols,
-                       cudaMemcpyDeviceToDevice);
-        }
-    }
 
-    for(int b = 0; b < num_kernels; b++) {
-        for(int r = 0; r < kernel_rows; r++) {
-            cudaMemcpy(fft_input + (b + num_images) * padded_rows * padded_cols + r * padded_cols,
-                       inbound_kernels + b * kernel_rows * kernel_cols + r * kernel_cols,
-                       sizeof(cufftReal) * kernel_cols,
-                       cudaMemcpyDeviceToDevice);
-        }
-    }
+                                                        
+    // fprintf(stderr, "FFT INPUT\n");
+    //     float fi[num_padded][padded_rows][padded_cols];
+    //     cudaMemcpy(fi, fft_input, sizeof(cufftReal) * num_padded * padded_rows * padded_cols, cudaMemcpyDeviceToHost);
+    //     for(uint32 padded_index = 0; padded_index < num_padded; padded_index++) {
+    //         for(uint32 r = 0; r < padded_rows; r++) {
+    //             for(uint32 c = 0; c < padded_cols; c++) {
+    //                 fprintf(stderr, "%.0f ", fi[padded_index][r][c]);
+    //             }
+    //             fprintf(stderr, "\n");
+    //         }
+    //         fprintf(stderr, "\n");
+    //     }
+                                                        
 
     /****************** 11s to here *************/
     // perform forward fft
@@ -210,7 +260,7 @@ int main(int argc, char *argv[])
     cudaFree(inverse_transformed);
 
     ////////////////////////////////////////////////////////////////////
-    } // end timing-iteration for loop
+    //} // end timing-iteration for loop
 
     // all the calculations are (basically) done, at least for full mode
     // stop the timer
@@ -228,7 +278,7 @@ int main(int argc, char *argv[])
             num_iterations,
             difftime(end, start) / (float)num_iterations);
 
-/*
+
     // TODO: Set strides appropriately or do memcpys to get rid of unneeded padding
     float results[num_images][num_kernels][padded_rows][padded_cols];
     // copy results back to host
@@ -247,7 +297,7 @@ int main(int argc, char *argv[])
             fprintf(stderr, "\n");
         }
     }
-*/
+
 
     // TODO: Other cleanup -- memory freeing, etc.
     cufftDestroy(fwd_plan); // TODO: reuse fft plans
