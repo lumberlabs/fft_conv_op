@@ -287,6 +287,7 @@ int main(int argc, char *argv[]) {
                                                             padded_rows,
                                                             padded_cols);
 
+
 #if DEBUG
     fprintf(stderr, "PADDED\n");
     cufftReal pad[num_padded][padded_rows][padded_cols];
@@ -312,10 +313,8 @@ int main(int argc, char *argv[]) {
 
     // do elemwise multiplication
     cufftComplex *multiplied;
-    // this memory will be re-used when the C2R transform is done in place, so make sure there's enough space
     uint32 multiplied_size = sizeof(cufftComplex) * batch_size * num_kernels * num_images * padded_rows * transformed_cols;
-    uint32 inverse_transformed_size = sizeof(cufftReal) * batch_size * num_kernels * num_images * padded_rows * padded_cols;
-    cudaMalloc((void **)&multiplied, max(multiplied_size, inverse_transformed_size));
+    cudaMalloc((void **)&multiplied, multiplied_size);
 
 
     dim3 dim_grid(batch_size * num_kernels, num_images);
@@ -328,7 +327,8 @@ int main(int argc, char *argv[]) {
 
     // do inverse fft
     cufftReal *inverse_transformed;
-    inverse_transformed = (cufftReal *)multiplied;
+    uint32 inverse_transformed_size = sizeof(cufftReal) * batch_size * num_kernels * num_images * padded_rows * padded_cols;
+    cudaMalloc((void **)&inverse_transformed, inverse_transformed_size);
 
     cufftExecC2R(inv_plan, multiplied, inverse_transformed);
 
