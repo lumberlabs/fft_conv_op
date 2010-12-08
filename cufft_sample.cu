@@ -108,11 +108,19 @@ int main(int argc, char *argv[])
     // general cuda setup and prep
     int threads_per_block = max_threads_per_block();
     
-    uint32 num_images = 2; //50;
+#if RUN_SPEED_TESTS
+    uint32 num_images = 50;
+#else
+    uint32 num_images = 2;
+#endif
     uint32 image_rows = 8;
     uint32 image_cols = 8;
 
-    uint32 num_kernels = 2; //20;
+#if RUN_SPEED_TESTS
+    uint32 num_kernels = 20;
+#else
+    uint32 num_kernels = 2;
+#endif
     uint32 kernel_rows = 5;
     uint32 kernel_cols = 5;
 
@@ -175,14 +183,15 @@ int main(int argc, char *argv[])
      cufftSetCompatibilityMode(inv_plan, CUFFT_COMPATIBILITY_NATIVE); // needed to prevent extra padding, so output looks natural
 
     // ok, the data is on the gpu; the plans are made; start the timer
-    uint32 num_iterations = 10000;
+    uint32 num_iterations = 100000;
     time_t start, end;
 
     start = time(NULL);
 
-    
-    //for(uint32 iteration = 0; iteration < num_iterations; iteration++) {
-    ////////////////////////////////////////////////////////////////////
+
+#if RUN_SPEED_TESTS
+    for(uint32 iteration = 0; iteration < num_iterations; iteration++) {
+#endif
 
     // rearrange images and kernels to their new padded size, all contiguous
     // to each other, since that is what the batched fft requires right now
@@ -234,8 +243,12 @@ int main(int argc, char *argv[])
 
     // do elemwise multiplication
     cufftComplex *multiplied;
-    cudaMalloc((void**)&multiplied, sizeof(cufftComplex) * num_images * num_kernels * padded_rows * transformed_cols);
+    // this memory will be re-used when the C2R transform is done in place, so make sure there's enough space
+    uint32 multiplied_size = sizeof(cufftComplex) * num_images * num_kernels * padded_rows * transformed_cols;
+    uint32 inverse_transformed_size = sizeof(cufftReal) * num_images * num_kernels * padded_rows * padded_cols;
+    cudaMalloc((void**)&multiplied, max(multiplied_size, inverse_transformed_size));
     cudaMemset(multiplied, 0xFF, sizeof(cufftComplex) * num_images * num_kernels * padded_rows * transformed_cols); // TODO: DEBUGGING ONLY!
+
 
     dim3 dim_grid(num_images, num_kernels);
     elementwise_image_kernel_multiply<<<dim_grid, padded_rows * transformed_cols>>>(transformed, multiplied, num_images, num_kernels, padded_rows * transformed_cols);
@@ -256,11 +269,14 @@ int main(int argc, char *argv[])
 
     /****************** 15s to here *************/
     cudaFree(fft_input);
+#if RUN_SPEED_TESTS
     cudaFree(transformed);
     cudaFree(multiplied);
+#endif
 
-    ////////////////////////////////////////////////////////////////////
-    //} // end timing-iteration for loop
+#if RUN_SPEED_TESTS
+    } // end timing-iteration for loop
+#endif
 
     // all the calculations are (basically) done, at least for full mode
     // stop the timer
@@ -278,6 +294,8 @@ int main(int argc, char *argv[])
             num_iterations,
             difftime(end, start) / (float)num_iterations);
 
+#if RUN_SPEED_TESTS
+#else
 
     // TODO: Set strides appropriately or do memcpys to get rid of unneeded padding
     float results[num_images][num_kernels][padded_rows][padded_cols];
@@ -297,7 +315,7 @@ int main(int argc, char *argv[])
             fprintf(stderr, "\n");
         }
     }
-
+#endif
 
     // TODO: Other cleanup -- memory freeing, etc.
     cufftDestroy(fwd_plan); // TODO: reuse fft plans
