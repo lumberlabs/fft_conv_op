@@ -416,7 +416,8 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    // TODO: Other cleanup -- memory freeing, etc.
-    cufftDestroy(fwd_plan); // TODO: reuse fft plans
+    cufftDestroy(fwd_plan);
     cufftDestroy(inv_plan);
+    cudaFree(inbound_images);
+    cudaFree(inbound_kernels);
 }
