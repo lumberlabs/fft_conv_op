@@ -10,8 +10,6 @@
 #include <sys/time.h>
 #include <time.h>
 
-#define DEBUG 0
-
 // TODO: Why are these necessary? What's wrong with stdint.h??
 typedef unsigned int uint32;
 typedef int int32;
@@ -167,6 +165,9 @@ int main(int argc, char *argv[]) {
     // set up images and kernels
     cufftReal *images = (cufftReal *)malloc(sizeof(cufftReal) * batch_size * num_images * image_rows * image_cols);
     //cufftReal images[batch_size][num_images][image_rows][image_cols];
+#if DEBUG
+    fprintf(stderr, "INBOUND IMAGES\n-----------------\n");
+#endif
     for(uint32 b = 0; b < batch_size; b++) {
         for(uint32 i = 0; i < num_images; i++) {
             for(uint32 r = 0; r < image_rows; r++) {
@@ -178,30 +179,26 @@ int main(int argc, char *argv[]) {
                                          + r * image_cols
                                          + c;
                     *image_ptr = i + 1;
-                }
-            }
-        }
-    }
-    
-#if RUN_SPEED_TESTS
-#else
-    fprintf(stderr, "INBOUND IMAGES\n-----------------\n");
-    for(uint32 b = 0; b < batch_size; b++) {
-        for(uint32 i = 0; i < num_images; i++) {
-            fprintf(stderr, "<image b %i, i %i>\n", b, i);
-            for(uint32 r = 0; r < image_rows; r++) {
-                for(uint32 c = 0; c < image_cols; c++) {
-                    fprintf(stderr, "%.0f ", images[b][i][r][c]);
-                }
-                fprintf(stderr, "\n");
-            }
-            fprintf(stderr, "\n");
-        }
-    }
+#if DEBUG
+                    fprintf(stderr, "%.0f ", *image_ptr);
 #endif
+                }
+#if DEBUG
+                fprintf(stderr, "\n");
+#endif
+            }
+#if DEBUG
+            fprintf(stderr, "\n");
+#endif
+        }
+    }
+
 
     cufftReal *kernels = (cufftReal *)malloc(sizeof(cufftReal) * num_kernels * num_images * kernel_rows * kernel_cols);
     //cufftReal kernels[num_kernels][num_images][kernel_rows][kernel_cols];
+#if DEBUG
+    fprintf(stderr, "INBOUND KERNELS\n");
+#endif
     for(uint32 k = 0; k < num_kernels; k++) {
         for(uint32 i = 0; i < num_images; i++) {
             for(uint32 r = 0; r < kernel_rows; r++) {
@@ -213,27 +210,19 @@ int main(int argc, char *argv[]) {
                                           + r * kernel_cols
                                           + c;
                     *kernel_ptr = (k + 1) * (i + 1);
-                }
-            }
-        }
-    }
-
-#if RUN_SPEED_TESTS
-#else
-    fprintf(stderr, "INBOUND KERNELS\n");
-    for(uint32 k = 0; k < num_kernels; k++) {
-        for(uint32 i = 0; i < num_images; i++) {
-            fprintf(stderr, "<kernel k %i, i %i>\n", k, i);
-            for(uint32 r = 0; r < kernel_rows; r++) {
-                for(uint32 c = 0; c < kernel_cols; c++) {
-                    fprintf(stderr, "%.0f ", kernels[k][i][r][c]);
-                }
-                fprintf(stderr, "\n");
-            }
-            fprintf(stderr, "\n");
-        }
-    }
+#if DEBUG
+                    fprintf(stderr, "%.0f", *kernel_ptr);
 #endif
+                }
+#if DEBUG
+                fprintf(stderr, "\n");
+#endif
+            }
+#if DEBUG
+            fprintf(stderr, "\n");
+#endif
+        }
+    }
 
     // copy images and kernels to device
     cufftReal *inbound_images;
@@ -382,7 +371,8 @@ int main(int argc, char *argv[]) {
     cudaFree(fft_input);
     cudaFree(transformed);
     cudaFree(multiplied);
-#if RUN_SPEED_TESTS
+#if !DEBUG
+    // if we're in debug, we'll be printing the output, so it wouldn't do to free it here
     cudaFree(added);
 #endif
 
@@ -407,7 +397,9 @@ int main(int argc, char *argv[]) {
             elapsed_s,
             num_iterations,
             elapsed_s / (float)num_iterations);
-#else
+#endif
+
+#if DEBUG
     // TODO: Set strides appropriately (or do memcpys to get rid of unneeded padding)
     float results[batch_size][num_kernels][padded_rows][padded_cols];
     // copy results back to host
