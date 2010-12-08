@@ -5,12 +5,21 @@ import theano
 import theano.tensor as T
 from theano.tensor.nnet import conv
 
+RUN_SPEED_TEST = True
+
 if __name__ == "__main__":
-    batch_size = 1
-    num_images = 4
-    image_dim = 4
-    num_kernels = 2
-    kernel_dim = 2
+    if RUN_SPEED_TEST:
+        batch_size = 500
+        num_images = 1
+        image_dim = 28
+        num_kernels = 50
+        kernel_dim = 5
+    else:
+        batch_size = 1
+        num_images = 4
+        image_dim = 4
+        num_kernels = 2
+        kernel_dim = 2
 
     filter_shape = (num_kernels, num_images, kernel_dim, kernel_dim)
     image_shape = (batch_size, num_images, image_dim, image_dim)
@@ -24,9 +33,10 @@ if __name__ == "__main__":
             sub_kernels.append(one_kernel * (x + 1) * (y + 1))
         kernels.append(sub_kernels)
     test_kernels = numpy.asarray(kernels)
-    print "KERNELS:"
-    print test_kernels
-    print "-------"
+    if not RUN_SPEED_TEST:
+        print "KERNELS:"
+        print test_kernels
+        print "-------"
     shared_kernels = theano.shared(value=test_kernels)
 
     reshaped_images = images.reshape((batch_size, num_images, image_dim, image_dim))
@@ -45,17 +55,18 @@ if __name__ == "__main__":
             sub_images.append(one_image * (y + 1))
         images.append(sub_images)
     test_images = numpy.asarray(images)
-    # test_images = numpy.ones((batch_size, num_images, image_dim, image_dim), dtype=theano.config.floatX)
-    print "TEST IMAGES"
-    print test_images
-    print "----------"
+    if not RUN_SPEED_TEST:
+        print "TEST IMAGES"
+        print test_images
+        print "----------"
 
     test_images = test_images.reshape(batch_size * num_images, image_dim * image_dim)
 
-    print "RESULT (batch_size x num_kernels x convolved_rows x convolved_cols)"
-    print f(test_images)
-    # print f(test_images).shape
-    # output shape is (batch_size, num_kernels, convolved_rows, convolved_cols)
-    # for iteration in xrange(1000):
-    #     f(test_images)
+    if not RUN_SPEED_TEST:
+        print "RESULT (batch_size x num_kernels x convolved_rows x convolved_cols)"
+        print f(test_images)
+
+    if RUN_SPEED_TEST:
+        for iteration in xrange(1000):
+            f(test_images)
 
