@@ -9,19 +9,25 @@
 #include <unistd.h>
 #include <time.h>
 
-
 // TODO: Why are these necessary? What's wrong with stdint.h??
 typedef unsigned int uint32;
 typedef int int32;
 
-// TODO: optimize me
-// optimizations include preloading (say) kernels and iterating over images
-// etc. etc.
-__global__ void elementwise_matrix_matrix_multiply(cufftComplex *src1, cufftComplex *src2, cufftComplex *dest, uint32 len) {
-    uint32 index = blockDim.x * blockIdx.x + threadIdx.x;
-    if(index < len) {
-        dest[index] = cuCmulf(src1[index], src2[index]);
-    }
+// TODO: optimize me more
+// TODO: what happens when element_length is bigger than the allowed num threads?
+__global__ void elementwise_image_kernel_multiply(cufftComplex *transformed,
+                                                  cufftComplex *multiplied,
+                                                  uint32 num_images,
+                                                  uint32 num_kernels,
+                                                  uint32 element_length) {
+    uint32 image_index = blockIdx.x;
+    uint32 kernel_index = blockIdx.y;
+    uint32 element_index = threadIdx.x;
+    cufftComplex *image_src = transformed + image_index * element_length;
+    cufftComplex *kernel_src = transformed + (num_images + kernel_index) * element_length;
+    cufftComplex *dest = multiplied + (image_index * num_kernels + kernel_index) * element_length;
+
+    dest[element_index] = cuCmulf(image_src[element_index], kernel_src[element_index]);
 }
 
 // TODO: optimize me
@@ -60,11 +66,11 @@ int main(int argc, char *argv[])
     // general cuda setup and prep
     int threads_per_block = max_threads_per_block();
     
-    uint32 num_images = 1;
-    uint32 image_rows = 28;
-    uint32 image_cols = 28;
+    uint32 num_images = 50;
+    uint32 image_rows = 8;
+    uint32 image_cols = 8;
 
-    uint32 num_kernels = 50;
+    uint32 num_kernels = 20;
     uint32 kernel_rows = 5;
     uint32 kernel_cols = 5;
 
@@ -77,7 +83,7 @@ int main(int argc, char *argv[])
     for(uint32 b = 0; b < num_images; b++) {
         for(uint32 r = 0; r < image_rows; r++) {
             for(uint32 c = 0; c < image_cols; c++) {
-                images[b][r][c] = (float)b;
+                images[b][r][c] = (float)b + 1;
             }
         }
     }
@@ -86,35 +92,10 @@ int main(int argc, char *argv[])
     for(uint32 b = 0; b < num_kernels; b++) {
         for(uint32 r = 0; r < kernel_rows; r++) {
             for(uint32 c = 0; c < kernel_cols; c++) {
-                kernels[b][r][c] = (float)b;
+                kernels[b][r][c] = (float)b + 1;
             }
         }
     }
-
-/*
-    fprintf(stderr, "INBOUND IMAGES\n");
-    for(uint32 image_index = 0; image_index < num_images; image_index++) {
-        for(uint32 r = 0; r < image_rows; r++) {
-            for(uint32 c = 0; c < image_cols; c++) {
-                fprintf(stderr, "%.0f ", images[image_index][r][c]);
-            }
-            fprintf(stderr, "\n");
-        }
-        fprintf(stderr, "\n");
-    }
-
-
-    fprintf(stderr, "INBOUND KERNELS\n");
-    for(uint32 kernel_index = 0; kernel_index < num_kernels; kernel_index++) {
-        for(uint32 r = 0; r < kernel_rows; r++) {
-            for(uint32 c = 0; c < kernel_cols; c++) {
-                fprintf(stderr, "%.0f ", kernels[kernel_index][r][c]);
-            }
-            fprintf(stderr, "\n");
-        }
-        fprintf(stderr, "\n");
-    }
-*/
 
     // copy images and kernels to device
     // do this first, and simply (before padding etc., to mimic what theano
@@ -185,21 +166,8 @@ int main(int argc, char *argv[])
                        cudaMemcpyDeviceToDevice);
         }
     }
-/*
-    fprintf(stderr, "FFT INPUT\n");
-    float fi[num_padded][padded_rows][padded_cols];
-    cudaMemcpy(fi, fft_input, sizeof(cufftReal) * num_padded * padded_rows * padded_cols, cudaMemcpyDeviceToHost);
-    for(uint32 padded_index = 0; padded_index < num_padded; padded_index++) {
-        for(uint32 r = 0; r < padded_rows; r++) {
-            for(uint32 c = 0; c < padded_cols; c++) {
-                fprintf(stderr, "%.0f ", fi[padded_index][r][c]);
-            }
-            fprintf(stderr, "\n");
-        }
-        fprintf(stderr, "\n");
-    }
-*/
-    
+
+    /****************** 11s to here *************/
     // perform forward fft
     uint32 transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
 
@@ -211,59 +179,17 @@ int main(int argc, char *argv[])
         fprintf(stderr, "fwd fft failed: %i", fwd_result);
     }
 
-/*
-    fprintf(stderr, "FFT OUTPUT\n");
-    cuComplex fo[num_padded][padded_rows][transformed_cols];
-    cudaMemcpy(fo, transformed, sizeof(cufftComplex) * num_padded * padded_rows * transformed_cols, cudaMemcpyDeviceToHost);
-    for(uint32 padded_index = 0; padded_index < num_padded; padded_index++) {
-        for(uint32 r = 0; r < padded_rows; r++) {
-            for(uint32 c = 0; c < transformed_cols; c++) {
-                fprintf(stderr, "%.0f,%.0f ", cuCrealf(fo[padded_index][r][c]), cuCimagf(fo[padded_index][r][c]));
-            }
-            fprintf(stderr, "\n");
-        }
-        fprintf(stderr, "\n");
-    }
-*/
-
-    // TODO: memory cleanup as appropriate
-    // cudaFree(images);
+    /****************** 11s to here, too! *************/
 
     // do elemwise multiplication
     cufftComplex *multiplied;
     cudaMalloc((void**)&multiplied, sizeof(cufftComplex) * num_images * num_kernels * padded_rows * transformed_cols);
     cudaMemset(multiplied, 0xFF, sizeof(cufftComplex) * num_images * num_kernels * padded_rows * transformed_cols); // TODO: DEBUGGING ONLY!
 
-    int blocks_per_grid = (padded_rows * transformed_cols + threads_per_block - 1) / threads_per_block;
-    for(uint32 image_index = 0; image_index < num_images; image_index++) {
-        for(uint32 kernel_index = 0; kernel_index < num_kernels; kernel_index++) {
-            elementwise_matrix_matrix_multiply<<<blocks_per_grid, threads_per_block>>>(transformed + image_index * padded_rows * transformed_cols,
-                                                                                       transformed + (num_images + kernel_index) * padded_rows * transformed_cols,
-                                                                                       multiplied + (image_index * num_kernels + kernel_index) * padded_rows * transformed_cols,
-                                                                                       padded_rows * transformed_cols);
-        }
-    }
+    dim3 dim_grid(num_images, num_kernels);
+    elementwise_image_kernel_multiply<<<dim_grid, padded_rows * transformed_cols>>>(transformed, multiplied, num_images, num_kernels, padded_rows * transformed_cols);
 
-/*
-    fprintf(stderr, "MULTIPLIED\n");
-    cuComplex mul[num_images][num_kernels][padded_rows][transformed_cols];
-    cudaMemcpy(mul, multiplied, sizeof(cufftComplex) * num_images * num_kernels * padded_rows * transformed_cols, cudaMemcpyDeviceToHost);
-    for(uint32 image_index = 0; image_index < num_images; image_index++) {
-        for(uint32 kernel_index = 0; kernel_index < num_kernels; kernel_index++) {
-            for(uint32 r = 0; r < padded_rows; r++) {
-                for(uint32 c = 0; c < transformed_cols; c++) {
-                    fprintf(stderr,
-                            "%.0f,%.0f ",
-                            cuCrealf(mul[image_index][kernel_index][r][c]),
-                            cuCimagf(mul[image_index][kernel_index][r][c]));
-                }
-                fprintf(stderr, "\n");
-            }
-            fprintf(stderr, "\n");
-        }
-        fprintf(stderr, "\n\n--------------------\n\n");
-    }
-*/
+    /****************** 13s to here *************/
 
     // do inverse fft
     cufftReal *inverse_transformed;
@@ -272,16 +198,17 @@ int main(int argc, char *argv[])
     cufftExecC2R(inv_plan, multiplied, inverse_transformed);
 
     // scale the results appropriately (cufft does non-normalized transforms)
-    blocks_per_grid = (num_images * num_kernels * padded_rows * padded_cols + threads_per_block - 1) / threads_per_block;
+    int blocks_per_grid = (num_images * num_kernels * padded_rows * padded_cols + threads_per_block - 1) / threads_per_block;
     elementwise_vector_scalar_multiply_inplace<<<blocks_per_grid, threads_per_block>>>(inverse_transformed,
                                                                                        1.0f / (padded_rows * padded_cols),
                                                                                        num_images * num_kernels * padded_rows * padded_cols);
 
-
+    /****************** 15s to here *************/
     cudaFree(fft_input);
     cudaFree(transformed);
     cudaFree(multiplied);
     cudaFree(inverse_transformed);
+
     ////////////////////////////////////////////////////////////////////
     } // end timing-iteration for loop
 
@@ -301,12 +228,12 @@ int main(int argc, char *argv[])
             num_iterations,
             difftime(end, start) / (float)num_iterations);
 
-
 /*
     // TODO: Set strides appropriately or do memcpys to get rid of unneeded padding
     float results[num_images][num_kernels][padded_rows][padded_cols];
     // copy results back to host
     cudaMemcpy(results, inverse_transformed, sizeof(cufftReal) * num_images * num_kernels * padded_rows * padded_cols, cudaMemcpyDeviceToHost);
+
 
     fprintf(stderr, "OUTBOUND\n");
     for(uint32 image_index = 0; image_index < num_images; image_index++) {
