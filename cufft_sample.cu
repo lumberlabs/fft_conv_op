@@ -7,9 +7,10 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <sys/time.h>
 #include <time.h>
 
-#define DEBUG 1
+#define DEBUG 0
 
 // TODO: Why are these necessary? What's wrong with stdint.h??
 typedef unsigned int uint32;
@@ -259,8 +260,9 @@ int main(int argc, char *argv[]) {
 #if RUN_SPEED_TESTS
     // done with setup. this is presumably where we'd be at the beginning of the conv op
     // in theano, so we can start timing here if we want
-    uint32 num_iterations = 10;
-    time_t start = time(NULL);
+    uint32 num_iterations = 1000;
+    struct timeval start;
+    gettimeofday(&start, NULL);
     for(uint32 iteration = 0; iteration < num_iterations; iteration++) {
 #endif
 
@@ -372,21 +374,25 @@ int main(int argc, char *argv[]) {
 
 #if RUN_SPEED_TESTS
     } // end timing-iteration for loop
-    time_t end = time(NULL);
+    struct timeval end;
+    gettimeofday(&end, NULL);
 #endif
 
 #if RUN_SPEED_TESTS
-    fprintf(stderr, 
-            "%i %ix%i images, %i %ix%i kernels: %.0fsec elapsed for %i iterations (%f sec/iter)\n",
+    unsigned long elapsed_us = (end.tv_sec - start.tv_sec) * 1000000 + (end.tv_usec - start.tv_usec);
+    float elapsed_s = elapsed_us / 1000000.0f;
+    fprintf(stderr,
+            "batch size: %i, num_images: %i, image size: %ix%i, num_kernels: %i, kernel size: %ix%i\n%.3fs elapsed for %i iterations (%f s/iter)\n",
+            batch_size,
             num_images,
             image_rows,
             image_cols,
             num_kernels,
             kernel_rows,
             kernel_cols,
-            difftime(end, start),
+            elapsed_s,
             num_iterations,
-            difftime(end, start) / (float)num_iterations);
+            elapsed_s / (float)num_iterations);
 #else
     // TODO: Set strides appropriately (or do memcpys to get rid of unneeded padding)
     float results[batch_size][num_kernels][padded_rows][padded_cols];
