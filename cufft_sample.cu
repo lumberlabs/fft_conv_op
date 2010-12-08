@@ -165,12 +165,19 @@ int main(int argc, char *argv[]) {
     uint32 transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
 
     // set up images and kernels
-    cufftReal images[batch_size][num_images][image_rows][image_cols];
+    cufftReal *images = (cufftReal *)malloc(sizeof(cufftReal) * batch_size * num_images * image_rows * image_cols);
+    //cufftReal images[batch_size][num_images][image_rows][image_cols];
     for(uint32 b = 0; b < batch_size; b++) {
         for(uint32 i = 0; i < num_images; i++) {
             for(uint32 r = 0; r < image_rows; r++) {
                 for(uint32 c = 0; c < image_cols; c++) {
-                    images[b][i][r][c] = i + 1;
+                    // images[b][i][r][c] = i + 1;
+                    cufftReal *image_ptr = images
+                                         + b * num_images * image_rows * image_cols
+                                         + i * image_rows * image_cols
+                                         + r * image_cols
+                                         + c;
+                    *image_ptr = i + 1;
                 }
             }
         }
@@ -193,12 +200,19 @@ int main(int argc, char *argv[]) {
     }
 #endif
 
-    cufftReal kernels[num_kernels][num_images][kernel_rows][kernel_cols];
+    cufftReal *kernels = (cufftReal *)malloc(sizeof(cufftReal) * num_kernels * num_images * kernel_rows * kernel_cols);
+    //cufftReal kernels[num_kernels][num_images][kernel_rows][kernel_cols];
     for(uint32 k = 0; k < num_kernels; k++) {
         for(uint32 i = 0; i < num_images; i++) {
             for(uint32 r = 0; r < kernel_rows; r++) {
                 for(uint32 c = 0; c < kernel_cols; c++) {
-                    kernels[k][i][r][c] = (k + 1) * (i + 1);
+                    // kernels[k][i][r][c] = (k + 1) * (i + 1);
+                    cufftReal *kernel_ptr = kernels
+                                          + k * num_images * kernel_rows * kernel_cols
+                                          + i * kernel_rows * kernel_cols
+                                          + r * kernel_cols
+                                          + c;
+                    *kernel_ptr = (k + 1) * (i + 1);
                 }
             }
         }
@@ -418,4 +432,6 @@ int main(int argc, char *argv[]) {
     cufftDestroy(inv_plan);
     cudaFree(inbound_images);
     cudaFree(inbound_kernels);
+    free(images);
+    free(kernels);
 }
