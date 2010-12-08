@@ -67,6 +67,12 @@ if __name__ == "__main__":
         print f(test_images)
 
     if RUN_SPEED_TEST:
+        print "batch size: {b}, num_images: {i}, image size: {ims}x{ims}, " \
+              "num_kernels: {k}, kernel size: {ks}x{ks}".format(b=batch_size,
+                                                                i=num_images,
+                                                                ims=image_dim,
+                                                                k=num_kernels,
+                                                                ks=kernel_dim)
         for iteration in xrange(1000):
             f(test_images)
 
