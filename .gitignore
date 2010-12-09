@@ -1,2 +1,6 @@
 a.out
 *~
+core.*
+*.pyc
+cufft_sample_speed
+cufft_sample_debug
