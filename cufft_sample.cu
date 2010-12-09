@@ -377,6 +377,9 @@ int main(int argc, char *argv[]) {
 #endif
 
 #if RUN_SPEED_TESTS
+    //Needed to make a more fair comparaison with Theano
+    //as currently Theano supose that we make one at the end of each gpu op
+    cudaThreadSynchronize();
     } // end timing-iteration for loop
     struct timeval end;
     gettimeofday(&end, NULL);
