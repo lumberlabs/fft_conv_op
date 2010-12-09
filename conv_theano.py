@@ -1,6 +1,8 @@
 #!/usr/bin/env python
+import sys
 
 import numpy
+
 import theano
 import theano.tensor as T
 from theano.tensor.nnet import conv
@@ -8,6 +10,10 @@ from theano.tensor.nnet import conv
 RUN_SPEED_TEST = True
 
 if __name__ == "__main__":
+    if len(sys.argv)>1 and sys.argv[1]=='fft':
+        from fft_conv_op import GpuFFTConvOp
+
+
     if RUN_SPEED_TEST:
         batch_size = 500
         num_images = 1
@@ -66,8 +72,11 @@ if __name__ == "__main__":
     if any([node.op.__class__.__name__=="ConvOp" for node in topo]):
         print "use CPU"
     elif any([node.op.__class__.__name__=="GpuConv" for node in topo]):
-        print "use GPU"
+        print "use GPUConv"
+    elif any([node.op.__class__.__name__=="GpuFFTConvOp" for node in topo]):
+        print "use GpuFFTConvOp"
     else:
+        import pdb;pdb.set_trace()
         print "use unknow"
 
     if not RUN_SPEED_TEST:
