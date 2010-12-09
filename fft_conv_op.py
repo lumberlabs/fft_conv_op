@@ -382,9 +382,10 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
 #endif
     dim3 adding_grid(nbatch, nkern);
     dim3 adding_threads(padded_rows, padded_cols);
+    dim3 dim_grid(nbatch * nkern, nstack);
     float *inverse_transformed;
-    int32 inverse_transformed_size = -1;
-
+    cufftComplex *transformed;
+    cufftComplex *multiplied;
 
 
 
@@ -422,6 +423,15 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
                                                             padded_rows,
                                                             padded_cols);
 
+#ifdef CHECK
+if(!check_success("pad_images_and_kernels")){
+        fprintf(stderr,"num_padded=(%%d), padding_threads=(%%d,%%d)\\n",num_padded,
+               padding_threads.x, padding_threads.y);
+        Py_XDECREF(out);
+        out = NULL;
+        %(fail)s;
+}
+#endif
 
 #if DEBUG
     fprintf(stderr, "PADDED\\n");
@@ -441,18 +451,21 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
     
     // perform forward fft
 
-    cufftComplex *transformed;
     cudaMalloc((void **)&transformed, sizeof(cufftComplex) * num_padded * padded_rows * transformed_cols);
 
     cufftExecR2C(fwd_plan, fft_input, transformed);
+#ifdef CHECK
+if(!check_success("cufftExecR2C")){
+        Py_XDECREF(out);
+        out = NULL;
+        %(fail)s;
+}
+#endif
 
     // do elemwise multiplication
-    cufftComplex *multiplied;
-    uint32 multiplied_size = sizeof(cufftComplex) * nbatch * nkern * nstack * padded_rows * transformed_cols;
-    cudaMalloc((void **)&multiplied, multiplied_size);
+    cudaMalloc((void **)&multiplied, sizeof(cufftComplex) * nbatch * nkern * nstack * padded_rows * transformed_cols);
 
 
-    dim3 dim_grid(nbatch * nkern, nstack);
     elementwise_image_kernel_multiply<<<dim_grid, padded_rows * transformed_cols>>>(
             transformed,
             multiplied,
@@ -469,12 +482,11 @@ if(!check_success("add_across_images_and_normalize")){
 #endif
 
     // do inverse fft
-    inverse_transformed_size = sizeof(float) * nbatch * nkern * nstack * padded_rows * padded_cols;
-    cudaMalloc((void **)&inverse_transformed, inverse_transformed_size);
+    cudaMalloc((void **)&inverse_transformed, sizeof(float) * nbatch * nkern * nstack * padded_rows * padded_cols);
 
     cufftExecC2R(inv_plan, multiplied, inverse_transformed);
 #ifdef CHECK
-if(!check_success("add_across_images_and_normalize")){
+if(!check_success("cufftExecC2R")){
         Py_XDECREF(out);
         out = NULL;
         %(fail)s;
@@ -568,7 +580,6 @@ if(!check_success("cudaFree(inverse_transformed)")){
         %(fail)s;
 }
 #endif
-
 //needed in to make the cudaThreadSynchronize and check if any of the previous
 //call failed.
 #ifndef CHECK
@@ -598,5 +609,5 @@ def local_gpu_fft_conv(node):
         node.op.border_mode=='full' and 
         node.op.subsample==(1,1)):
         img, kern = node.inputs
-        gpu_conv = GpuFFTConvOp(node.op.border_mode)
-        return [GpuFFTConvOp('full')(img,kern)]
+        gpu_fft_conv = GpuFFTConvOp(node.op.border_mode, check=node.op.verbose)
+        return [gpu_fft_conv(img,kern)]

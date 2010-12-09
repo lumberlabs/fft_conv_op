@@ -10,7 +10,17 @@ from theano.tensor.nnet import conv
 RUN_SPEED_TEST = True
 
 if __name__ == "__main__":
-    if len(sys.argv)>1 and sys.argv[1]=='fft':
+    fft = False
+    check = False
+    for param in sys.argv[1:]:
+        if param == '--fft':
+            fft = True
+        elif param == '--check':
+            check = True
+        else:
+            print "param '%s' not know"%param
+            sys.exit(0)
+    if fft:
         from fft_conv_op import GpuFFTConvOp
 
 
@@ -66,7 +76,8 @@ if __name__ == "__main__":
                            filters=shared_kernels, 
                            filter_shape=filter_shape,
                            image_shape=image_shape,
-                           border_mode="full")
+                           border_mode="full",
+                           verbose=int(check))
     f = theano.function(inputs=[], updates={shared_output:conv_out})
     topo = f.maker.env.toposort()
     if any([node.op.__class__.__name__=="ConvOp" for node in topo]):
