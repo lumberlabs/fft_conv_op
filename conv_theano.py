@@ -24,7 +24,6 @@ if __name__ == "__main__":
     filter_shape = (num_kernels, num_images, kernel_dim, kernel_dim)
     image_shape = (batch_size, num_images, image_dim, image_dim)
 
-    images = T.matrix(dtype=theano.config.floatX)
     one_kernel = numpy.ones((kernel_dim, kernel_dim), dtype=theano.config.floatX)
     kernels = []
     for x in xrange(num_kernels):
@@ -33,19 +32,6 @@ if __name__ == "__main__":
             sub_kernels.append(one_kernel * (x + 1) * (y + 1))
         kernels.append(sub_kernels)
     test_kernels = numpy.asarray(kernels)
-    if not RUN_SPEED_TEST:
-        print "KERNELS:"
-        print test_kernels
-        print "-------"
-    shared_kernels = theano.shared(value=test_kernels)
-
-    reshaped_images = images.reshape((batch_size, num_images, image_dim, image_dim))
-    conv_out = conv.conv2d(input=reshaped_images,
-                           filters=shared_kernels, 
-                           filter_shape=filter_shape,
-                           image_shape=image_shape,
-                           border_mode="full")
-    f = theano.function(inputs=[images], outputs=conv_out)
 
     one_image = numpy.ones((image_dim, image_dim), dtype=theano.config.floatX)
     images = []
@@ -63,16 +49,34 @@ if __name__ == "__main__":
     test_images = test_images.reshape(batch_size * num_images, image_dim * image_dim)
 
     if not RUN_SPEED_TEST:
+        print "KERNELS:"
+        print test_kernels
+        print "-------"
+    shared_kernels = theano.shared(value=test_kernels)
+    shared_images = theano.shared(value=test_images)
+    shared_output = theano.shared(numpy.zeros((2,3,4,5),dtype=theano.config.floatX))
+    reshaped_images = shared_images.reshape((batch_size, num_images, image_dim, image_dim))
+    conv_out = conv.conv2d(input=reshaped_images,
+                           filters=shared_kernels, 
+                           filter_shape=filter_shape,
+                           image_shape=image_shape,
+                           border_mode="full")
+    f = theano.function(inputs=[], updates={shared_output:conv_out})
+    topo = f.maker.env.toposort()
+    if any([node.op.__class__.__name__=="ConvOp" for node in topo]):
+        print "use CPU"
+    elif any([node.op.__class__.__name__=="GpuConv" for node in topo]):
+        print "use GPU"
+    else:
+        print "use unknow"
+
+    if not RUN_SPEED_TEST:
         print "RESULT (batch_size x num_kernels x convolved_rows x convolved_cols)"
         print f(test_images)
 
     if RUN_SPEED_TEST:
-        print "batch size: {b}, num_images: {i}, image size: {ims}x{ims}, " \
-              "num_kernels: {k}, kernel size: {ks}x{ks}".format(b=batch_size,
-                                                                i=num_images,
-                                                                ims=image_dim,
-                                                                k=num_kernels,
-                                                                ks=kernel_dim)
+        print "batch size: %(batch_size)s, num_images: %(num_images)s, image size: %(image_dim)sx%(image_dim)s, " \
+              "num_kernels: %(num_kernels)s, kernel size: %(kernel_dim)sx%(kernel_dim)s"%locals()
         for iteration in xrange(1000):
-            f(test_images)
+            f()
 
