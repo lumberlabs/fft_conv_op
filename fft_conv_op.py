@@ -2,13 +2,17 @@
 WARNING: GpuFFTConvOp currently don't return the good answer
 
 TODO: create the plan in the c_support_code() fct when we know the shape?
+TODO: reuse preallocated memory for intermediate result?
+TODO: reuse the op own preallocated memory for next intermediate result?
+TODO: speed test more case including all case in the last scipy paper.
+TODO: extend to cover more case, as in many case we will crash!
 """
 
 
 from theano.gof import Apply, Op
 from theano.sandbox.cuda.basic_ops import as_cuda_ndarray_variable, CudaNdarrayType
 
-print "\n\n\n WARNING: CURRENT VERSION of GpuFFTConvOp leak memory and is not well optimized \n\n\n"
+print "\n\n\n WARNING: CURRENT VERSION of GpuFFTConvOp is not well optimized! \n\n\n"
 
 class GpuFFTConvOp(Op):
     __attrnames = ['out_mode', 'check', 'debug']
