@@ -370,6 +370,7 @@ int main(int argc, char *argv[]) {
 
     cudaFree(fft_input);
     cudaFree(transformed);
+    // cudaFree(inverse_transformed);
     cudaFree(multiplied);
 #if !DEBUG
     // if we're in debug, we'll be printing the output, so it wouldn't do to free it here
