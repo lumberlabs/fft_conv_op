@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+#TODO: test not square case
+
 import sys
 
 import numpy
@@ -32,7 +34,9 @@ if __name__ == "__main__":
         num_images = 1
         image_dim = 28
         num_kernels = 50
-        kernel_dim = 5
+        kernel_dim = 4
+        #we want to test case that are not square
+        assert numpy.sqrt(image_dim+kernel_dim-1)!=int(numpy.sqrt(image_dim+kernel_dim-1))
     else:
         batch_size = 2
         num_images = 4
@@ -90,8 +94,7 @@ if __name__ == "__main__":
     elif any([node.op.__class__.__name__=="GpuFFTConvOp" for node in topo]):
         print "use GpuFFTConvOp"
     else:
-        import pdb;pdb.set_trace()
-        print "use unknow"
+        print "use unknow gpu version"
 
     print "batch size: %(batch_size)s, num_images: %(num_images)s, image size: %(image_dim)sx%(image_dim)s, " \
         "num_kernels: %(num_kernels)s, kernel size: %(kernel_dim)sx%(kernel_dim)s"%locals()
