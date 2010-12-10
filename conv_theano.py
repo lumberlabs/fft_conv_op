@@ -15,6 +15,8 @@ if __name__ == "__main__":
     fft = False
     check = False
     iter = 1000
+    valid = False
+    mode = 'full'
     for param in sys.argv[1:]:
         if param == '--fft':
             fft = True
@@ -22,6 +24,9 @@ if __name__ == "__main__":
             check = True
         elif param.startswith('--iter='):
             iter = int(param[7:])
+        elif param == '--valid':
+            valid = True
+            mode = 'valid'
         else:
             print "param '%s' not know"%param
             sys.exit(0)
@@ -37,6 +42,8 @@ if __name__ == "__main__":
         kernel_dim = 4
         #we want to test case that are not square
         assert numpy.sqrt(image_dim+kernel_dim-1)!=int(numpy.sqrt(image_dim+kernel_dim-1))
+        if valid:
+            batch_size = 200
     else:
         batch_size = 2
         num_images = 4
@@ -83,7 +90,7 @@ if __name__ == "__main__":
                            filters=shared_kernels, 
                            filter_shape=filter_shape,
                            image_shape=image_shape,
-                           border_mode="full",
+                           border_mode=mode,
                            verbose=int(check))
     f = theano.function(inputs=[], updates={shared_output:conv_out})
     topo = f.maker.env.toposort()
