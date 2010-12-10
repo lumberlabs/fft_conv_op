@@ -578,7 +578,7 @@ if(!check_success("cufftExecR2C")){
             padded_rows * transformed_cols);
 #ifdef CHECK
 if(!check_success("elementwise_image_kernel_multiply")){
-        printf("dim_grid=(%%d,%%d) nb_threads=%%d\\n",
+        printf("elementwise_image_kernel_multiply failed dim_grid=(%%d,%%d) nb_threads=%%d\\n",
                dim_grid.x,dim_grid.y,
                padded_rows * transformed_cols);
         Py_XDECREF(out);
@@ -631,9 +631,9 @@ if(!check_success("cufftExecC2R")){
         padded_rows * padded_cols); // normalization factor
 #ifdef CHECK
 if(!check_success("add_across_images_and_normalize")){
-        printf("dim_grid=(%%d,%%d) nb_threads=(%%d,%%d)\\n",
+        printf("add_across_images_and_normalize failed dim_grid=(%%d,%%d) nb_threads=(%%d,%%d) nstack=%%d nbatch=%%d nkern=%%d normalization_factor=%%d\\n",
                adding_grid.x,adding_grid.y,
-               adding_threads.x,adding_threads.y);
+               adding_threads.x,adding_threads.y,nstack,nbatch,nkern,padded_rows * padded_cols);
         Py_XDECREF(out);
         out = NULL;
         %(fail)s;
