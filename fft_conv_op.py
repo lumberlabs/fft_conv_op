@@ -226,18 +226,19 @@ __global__ void add_across_images_and_normalize(float *inverse_transformed,
                                                 uint32 padded_rows,
                                                 uint32 padded_cols,
                                                 float normalization_factor) {
-    uint32 row = threadIdx.x;
     uint32 col = threadIdx.y;
     uint32 batch_index = blockIdx.x;
     uint32 kernel_index = blockIdx.y;
-    float sum = 0.0f;
-    for(uint32 image_index = 0; image_index < num_images; image_index++) {
-        float *image = inverse_transformed + (batch_index * num_kernels * num_images + kernel_index * num_images + image_index) * padded_rows * padded_cols;
-        float *image_element = image + row * padded_cols + col;
-        sum += *image_element;
+    for(uint32 row = threadIdx.x;row<padded_rows;row+=blockDim.x){
+        float sum = 0.0f;
+        for(uint32 image_index = 0; image_index < num_images; image_index++) {
+          float *image = inverse_transformed + (batch_index * num_kernels * num_images + kernel_index * num_images + image_index) * padded_rows * padded_cols;
+          float *image_element = image + row * padded_cols + col;
+          sum += *image_element;
+        }
+        float *added_destination = added + batch_index * num_kernels * padded_rows * padded_cols + kernel_index * padded_rows * padded_cols + row * padded_cols + col;
+        *added_destination = sum / normalization_factor;
     }
-    float *added_destination = added + batch_index * num_kernels * padded_rows * padded_cols + kernel_index * padded_rows * padded_cols + row * padded_cols + col;
-    *added_destination = sum / normalization_factor;
 }
  """ %locals()
 
@@ -412,6 +413,7 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
     dim3 adding_threads(padded_rows, padded_cols);
     dim3 dim_grid(nbatch * nkern, nstack);
     dim3 dim_thread(padded_rows * transformed_cols);
+    dim3 padding_threads(padded_rows, padded_cols);
 
     //create 4 temporary space in one cudaMalloc call to make it faster.
     int fft_input_size = sizeof(float) * num_padded * padded_rows * padded_cols;
@@ -420,12 +422,23 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
     int inverse_transformed_size = sizeof(float) * nbatch * nkern * nstack * padded_rows * padded_cols;
 
     void * device_mem = NULL;
+    float *fft_input = NULL;
+    cufftComplex *transformed = NULL;
+    cufftComplex *multiplied = NULL;
+    float *inverse_transformed = NULL ;
     cudaMalloc(&device_mem, fft_input_size+transformed_size+multiplied_size+inverse_transformed_size);
+#ifdef CHECK
+if(!check_success("cudaMalloc(device_mem,...)")){
+        Py_XDECREF(out);
+        out = NULL;
+        %(fail)s;
+}
+#endif
 
-    float *fft_input = ((float*)device_mem);
-    cufftComplex *transformed = ((cufftComplex*)(fft_input+fft_input_size/sizeof(float)));
-    cufftComplex *multiplied = ((cufftComplex*)(transformed+transformed_size/sizeof(cufftComplex)));
-    float *inverse_transformed = ((float*)(multiplied+multiplied_size/sizeof(cufftComplex)));
+    fft_input = ((float*)device_mem);
+    transformed = ((cufftComplex*)(fft_input+fft_input_size/sizeof(float)));
+    multiplied = ((cufftComplex*)(transformed+transformed_size/sizeof(cufftComplex)));
+    inverse_transformed = ((float*)(multiplied+multiplied_size/sizeof(cufftComplex)));
 
 
 
@@ -443,7 +456,6 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
 
     // rearrange images and kernels to their new padded size, all contiguous
     // to each other, since that is what the batched fft requires right now
-    dim3 padding_threads(padded_rows, padded_cols);
     assert(padded_cols<=512);
     while(padding_threads.x*padding_threads.y>512)padding_threads.x--;
     pad_images_and_kernels<<<num_padded, padding_threads>>>(img->devdata,
@@ -546,6 +558,8 @@ if(!check_success("cufftExecC2R")){
 
 
     // sum across images and scale the results appropriately (cufft does non-normalized transforms)
+    assert(adding_threads.y<512);
+    while(adding_threads.x*adding_threads.y>512)adding_threads.x--;
     add_across_images_and_normalize<<<adding_grid, adding_threads>>>(
         inverse_transformed,
         out->devdata,
@@ -557,6 +571,9 @@ if(!check_success("cufftExecC2R")){
         padded_rows * padded_cols); // normalization factor
 #ifdef CHECK
 if(!check_success("add_across_images_and_normalize")){
+        printf("dim_grid=(%%d,%%d) nb_threads=(%%d,%%d)\\n",
+               adding_grid.x,adding_grid.y,
+               adding_threads.x,adding_threads.y);
         Py_XDECREF(out);
         out = NULL;
         %(fail)s;
