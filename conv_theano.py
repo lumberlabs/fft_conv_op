@@ -12,11 +12,14 @@ RUN_SPEED_TEST = True
 if __name__ == "__main__":
     fft = False
     check = False
+    iter = 1000
     for param in sys.argv[1:]:
         if param == '--fft':
             fft = True
         elif param == '--check':
             check = True
+        elif param.startswith('--iter='):
+            iter = int(param[7:])
         else:
             print "param '%s' not know"%param
             sys.exit(0)
@@ -97,6 +100,6 @@ if __name__ == "__main__":
     if RUN_SPEED_TEST:
         print "batch size: %(batch_size)s, num_images: %(num_images)s, image size: %(image_dim)sx%(image_dim)s, " \
               "num_kernels: %(num_kernels)s, kernel size: %(kernel_dim)sx%(kernel_dim)s"%locals()
-        for iteration in xrange(1000):
+        for iteration in xrange(iter):
             f()
 
