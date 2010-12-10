@@ -218,6 +218,11 @@ __global__ void elementwise_image_kernel_multiply(cufftComplex *transformed,
 }
 
 // TODO: is it possible to optimize this?
+// YES make memory read coallesced! We make more read then write
+//blockDim.x=nbatch
+//blockDim.y=nkern
+//blockThread.x=out_len or less
+//blockThread.y=out_wid
 __global__ void add_across_images_and_normalize(float *inverse_transformed,
                                                 float *added,
                                                 uint32 num_images,
@@ -225,18 +230,20 @@ __global__ void add_across_images_and_normalize(float *inverse_transformed,
                                                 uint32 num_kernels,
                                                 uint32 padded_rows,
                                                 uint32 padded_cols,
+                                                uint32 rows,
+                                                uint32 cols,
                                                 float normalization_factor) {
     uint32 col = threadIdx.y;
     uint32 batch_index = blockIdx.x;
     uint32 kernel_index = blockIdx.y;
-    for(uint32 row = threadIdx.x;row<padded_rows;row+=blockDim.x){
+    for(uint32 row = threadIdx.x;row<rows;row+=blockDim.x){
         float sum = 0.0f;
         for(uint32 image_index = 0; image_index < num_images; image_index++) {
           float *image = inverse_transformed + (batch_index * num_kernels * num_images + kernel_index * num_images + image_index) * padded_rows * padded_cols;
           float *image_element = image + row * padded_cols + col;
           sum += *image_element;
         }
-        float *added_destination = added + batch_index * num_kernels * padded_rows * padded_cols + kernel_index * padded_rows * padded_cols + row * padded_cols + col;
+        float *added_destination = added + batch_index * num_kernels * rows * cols + kernel_index * rows * cols + row * cols + col;
         *added_destination = sum / normalization_factor;
     }
 }
@@ -412,8 +419,8 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
 
     adding_grid.x=nbatch;
     adding_grid.y=nkern;
-    adding_threads.x = padded_rows;
-    adding_threads.y = padded_cols;
+    adding_threads.x = out_len;
+    adding_threads.y = out_wid;
     dim_grid.x = nbatch * nkern;
     dim_grid.y = nstack;
     dim_thread = padded_rows * transformed_cols;
@@ -628,6 +635,8 @@ if(!check_success("cufftExecC2R")){
         nkern,
         padded_rows,
         padded_cols,
+        out_len,
+        out_wid,
         padded_rows * padded_cols); // normalization factor
 #ifdef CHECK
 if(!check_success("add_across_images_and_normalize")){
