@@ -420,6 +420,11 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     padding_threads.x = padded_rows;
     padding_threads.y = padded_cols;
 
+    while(adding_threads.x*adding_threads.y>512)adding_threads.x--;
+    if(adding_threads.y>512){
+        PyErr_Format(PyExc_ValueError, "GpuFFTConvOp size too big for adding_threads.y %%d\\n",adding_threads.y);
+        %(fail)s
+    }
 
 
 //SHOULD BE DONE ONLY ONCE
@@ -611,8 +616,6 @@ if(!check_success("cufftExecC2R")){
 
 
     // sum across images and scale the results appropriately (cufft does non-normalized transforms)
-    assert(adding_threads.y<512);
-    while(adding_threads.x*adding_threads.y>512)adding_threads.x--;
     add_across_images_and_normalize<<<adding_grid, adding_threads>>>(
         inverse_transformed,
         out->devdata,
