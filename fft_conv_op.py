@@ -486,7 +486,11 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
 
     cudaMalloc(&device_mem, fft_input_size+transformed_size+multiplied_size+inverse_transformed_size);
 #ifdef CHECK
-if(!check_success("cudaMalloc(device_mem,...)")){
+char buff[1024];
+sprintf(buff,"cudaMalloc(device_mem,%%d+%%d+%%d+%%d=%%d)",
+        fft_input_size,transformed_size,multiplied_size,inverse_transformed_size,
+        fft_input_size+transformed_size+multiplied_size+inverse_transformed_size);
+if(!check_success(buff)){
         Py_XDECREF(out);
         out = NULL;
         %(fail)s;
