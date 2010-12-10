@@ -258,23 +258,6 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
 #endif
     CudaNdarray * out = %(z)s;
 
-    if (img->nd != 4){
-        PyErr_SetString(PyExc_ValueError, "GpuFFTConvOp required img of 4D");
-        return NULL;
-    }
-    if (kern->nd != 4){
-        PyErr_SetString(PyExc_ValueError, "GpuFFTConvOp required kern of 4D");
-        return NULL;
-    }
-    if(!CudaNdarray_is_c_contiguous(img)){
-        PyErr_SetString(PyExc_ValueError, "GpuFFTConvOp required c contiguous images");
-        return NULL;
-    }
-    if(!CudaNdarray_is_c_contiguous(kern)){
-        PyErr_SetString(PyExc_ValueError, "GpuFFTConvOp required c contiguous kernel");
-        return NULL;
-    }
-
     int out_dim[4];
     out_dim[0] = CudaNdarray_HOST_DIMS(img)[0];
     out_dim[1] = CudaNdarray_HOST_DIMS(kern)[0];
@@ -293,6 +276,77 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     out_dim[2] = logical_rows;
     out_dim[3] = logical_cols;
     
+    int nbatch;
+    int nkern;
+    int nstack;
+    int img_wid;
+    int img_len;
+    int kern_wid;
+    int kern_len;
+    int out_wid;
+    int out_len;
+
+    int img_stride_col;
+    int img_stride_row;
+    int img_stride_stack;
+    int img_stride_batch;
+    int kern_stride_col;
+    int kern_stride_row;
+    int kern_stride_stack;
+    int kern_stride_nkern;
+
+    int img_size;
+    int kern_size;
+    int out_size;
+    int img_size_byte;
+    int kern_size_byte;
+    //padded image sizes
+    int img_wid_padded;
+    int img_len_padded;
+    int img_size_padded;
+    int img_size_padded_byte;
+
+    uint32 padded_rows;
+    uint32 padded_cols;
+    int32 padded_dimensions[2];
+    uint32 num_padded;
+    int32 transformed_cols;
+
+    dim3 adding_grid;
+    dim3 adding_threads;
+    dim3 dim_grid;
+    dim3 dim_thread;
+    dim3 padding_threads;
+
+    //create 4 temporary space in one cudaMalloc call to make it faster.
+    int fft_input_size;
+    int transformed_size;
+    int multiplied_size;
+    int inverse_transformed_size;
+
+    void * device_mem = NULL;
+    float *fft_input = NULL;
+    cufftComplex *transformed = NULL;
+    cufftComplex *multiplied = NULL;
+    float *inverse_transformed = NULL ;
+
+    if (img->nd != 4){
+        PyErr_SetString(PyExc_ValueError, "GpuFFTConvOp required img of 4D");
+        %(fail)s
+    }
+    if (kern->nd != 4){
+        PyErr_SetString(PyExc_ValueError, "GpuFFTConvOp required kern of 4D");
+        %(fail)s
+    }
+    if(!CudaNdarray_is_c_contiguous(img)){
+        PyErr_SetString(PyExc_ValueError, "GpuFFTConvOp required c contiguous images");
+        %(fail)s
+    }
+    if(!CudaNdarray_is_c_contiguous(kern)){
+        PyErr_SetString(PyExc_ValueError, "GpuFFTConvOp required c contiguous kernel");
+        %(fail)s
+    }
+
     if(!(out && out->nd==4 && CudaNdarray_is_c_contiguous(out) 
 	 && CudaNdarray_HOST_DIMS(out)[0]==out_dim[0]
 	 && CudaNdarray_HOST_DIMS(out)[1]==out_dim[1]
@@ -314,52 +368,62 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     if (!out)
     {
         PyErr_SetString(PyExc_ValueError, "not able to create a new output image");
-        return NULL;
+        %(fail)s
     }
  
 
-    const int nstack=CudaNdarray_HOST_DIMS(kern)[1];
-    const int nbatch=CudaNdarray_HOST_DIMS(img)[0];
-    const int nkern=CudaNdarray_HOST_DIMS(kern)[0];
-    const int img_wid=CudaNdarray_HOST_DIMS(img)[3];
-    const int img_len=CudaNdarray_HOST_DIMS(img)[2];
-    const int kern_wid=CudaNdarray_HOST_DIMS(kern)[3];
-    const int kern_len=CudaNdarray_HOST_DIMS(kern)[2];
-    const int out_wid=CudaNdarray_HOST_DIMS(out)[3];
-    const int out_len=CudaNdarray_HOST_DIMS(out)[2];
+    nbatch=CudaNdarray_HOST_DIMS(img)[0];
+    nkern=CudaNdarray_HOST_DIMS(kern)[0];
+    nstack=CudaNdarray_HOST_DIMS(img)[1];
+    img_wid=CudaNdarray_HOST_DIMS(img)[3];
+    img_len=CudaNdarray_HOST_DIMS(img)[2];
+    kern_wid=CudaNdarray_HOST_DIMS(kern)[3];
+    kern_len=CudaNdarray_HOST_DIMS(kern)[2];
+    out_wid=CudaNdarray_HOST_DIMS(out)[3];
+    out_len=CudaNdarray_HOST_DIMS(out)[2];
 
-    const int img_stride_col= CudaNdarray_HOST_STRIDES(img)[3];
-    const int img_stride_row=CudaNdarray_HOST_STRIDES(img)[2];
-    const int img_stride_stack=CudaNdarray_HOST_STRIDES(img)[1];
-    const int img_stride_batch=CudaNdarray_HOST_STRIDES(img)[0];
-    const int kern_stride_col= CudaNdarray_HOST_STRIDES(kern)[3];
-    const int kern_stride_row=CudaNdarray_HOST_STRIDES(kern)[2];
-    const int kern_stride_stack= CudaNdarray_HOST_STRIDES(kern)[1];
-    const int kern_stride_nkern=CudaNdarray_HOST_STRIDES(kern)[0];
+    img_stride_col= CudaNdarray_HOST_STRIDES(img)[3];
+    img_stride_row=CudaNdarray_HOST_STRIDES(img)[2];
+    img_stride_stack=CudaNdarray_HOST_STRIDES(img)[1];
+    img_stride_batch=CudaNdarray_HOST_STRIDES(img)[0];
+    kern_stride_col= CudaNdarray_HOST_STRIDES(kern)[3];
+    kern_stride_row=CudaNdarray_HOST_STRIDES(kern)[2];
+    kern_stride_stack= CudaNdarray_HOST_STRIDES(kern)[1];
+    kern_stride_nkern=CudaNdarray_HOST_STRIDES(kern)[0];
 
-    const int img_size=img_len*img_wid;
-    const int kern_size=kern_len*kern_wid;
-    const int out_size=out_len*out_wid;
-    const int img_size_byte = img_size*sizeof(float);
-    const int kern_size_byte = kern_size*sizeof(float);
+    img_size=img_len*img_wid;
+    kern_size=kern_len*kern_wid;
+    out_size=out_len*out_wid;
+    img_size_byte = img_size*sizeof(float);
+    kern_size_byte = kern_size*sizeof(float);
     //padded image sizes
-    const int img_wid_padded=img_wid+2*kern_wid-2;
-    const int img_len_padded=img_len+2*kern_len-2;
-    const int img_size_padded=img_len_padded * img_wid_padded;
-    const int img_size_padded_byte = img_size_padded*sizeof(float);
+    img_wid_padded=img_wid+2*kern_wid-2;
+    img_len_padded=img_len+2*kern_len-2;
+    img_size_padded=img_len_padded * img_wid_padded;
+    img_size_padded_byte = img_size_padded*sizeof(float);
 
 
-    uint32 padded_rows = next_power_of_two(out_len);
-    uint32 padded_cols = next_power_of_two(out_wid);
-    uint32 num_padded = nbatch * nstack + nkern * nstack; // total images + total kernels
-    int32 transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
+    padded_rows = next_power_of_two(out_len);
+    padded_cols = next_power_of_two(out_wid);
+    padded_dimensions[0] = padded_rows;
+    padded_dimensions[1] = padded_cols;
+    num_padded = nbatch * nstack + nkern * nstack; // total images + total kernels
+    transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
 
+    adding_grid.x=nbatch;
+    adding_grid.y=nkern;
+    adding_threads.x = padded_rows;
+    adding_threads.y = padded_cols;
+    dim_grid.x = nbatch * nkern;
+    dim_grid.y = nstack;
+    dim_thread = padded_rows * transformed_cols;
+    padding_threads.x = padded_rows;
+    padding_threads.y = padded_cols;
 
 
 
 //SHOULD BE DONE ONLY ONCE
     // assume we can pay the planning price just once and amortize it away, so do the planning up front
-    int32 padded_dimensions[2] = {padded_rows, padded_cols};
     if(!(fwd_plan &&
          old_padded_dimensions[0] == padded_dimensions[0] &&
          old_padded_dimensions[1] == padded_dimensions[1] &&
@@ -409,23 +473,12 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
     float inv[nbatch][nkern][nstack][padded_rows][padded_cols];
 #endif
 
-    dim3 adding_grid(nbatch, nkern);
-    dim3 adding_threads(padded_rows, padded_cols);
-    dim3 dim_grid(nbatch * nkern, nstack);
-    dim3 dim_thread(padded_rows * transformed_cols);
-    dim3 padding_threads(padded_rows, padded_cols);
-
     //create 4 temporary space in one cudaMalloc call to make it faster.
-    int fft_input_size = sizeof(float) * num_padded * padded_rows * padded_cols;
-    int transformed_size = sizeof(cufftComplex) * num_padded * padded_rows * transformed_cols;
-    int multiplied_size = sizeof(cufftComplex) * nbatch * nkern * nstack * padded_rows * transformed_cols;
-    int inverse_transformed_size = sizeof(float) * nbatch * nkern * nstack * padded_rows * padded_cols;
+    fft_input_size = sizeof(float) * num_padded * padded_rows * padded_cols;
+    transformed_size = sizeof(cufftComplex) * num_padded * padded_rows * transformed_cols;
+    multiplied_size = sizeof(cufftComplex) * nbatch * nkern * nstack * padded_rows * transformed_cols;
+    inverse_transformed_size = sizeof(float) * nbatch * nkern * nstack * padded_rows * padded_cols;
 
-    void * device_mem = NULL;
-    float *fft_input = NULL;
-    cufftComplex *transformed = NULL;
-    cufftComplex *multiplied = NULL;
-    float *inverse_transformed = NULL ;
     cudaMalloc(&device_mem, fft_input_size+transformed_size+multiplied_size+inverse_transformed_size);
 #ifdef CHECK
 if(!check_success("cudaMalloc(device_mem,...)")){
@@ -615,6 +668,7 @@ if(!check_success("cudaFree(device_mem)")){
 //call failed.
 #ifndef CHECK
     if(!check_success("globalgpu kernell calls")){
+        printf("GpuFFTConvOp have at least one gpu fct that failed!\\n");
         Py_XDECREF(out);
         out = NULL;
         %(fail)s;
