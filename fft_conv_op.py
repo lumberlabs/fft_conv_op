@@ -707,6 +707,11 @@ from theano.sandbox.cuda.opt import register_opt
 from theano.sandbox.cuda.blas import GpuConv
 from theano.gof import local_optimizer
 import theano.sandbox.cuda as cuda
+from theano.configparser import config, AddConfigVar, BoolParam
+
+AddConfigVar('GpuFFTConvOp.valid',
+        "Use the GpuFFTConvOp for GpuConv in valid mode",
+        BoolParam(False))
 
 @register_opt()
 @local_optimizer([GpuConv])
@@ -715,11 +720,29 @@ def local_gpu_fft_conv(node):
     gpu_conv -> gpu_fft_conv_op
 
     """
-    if (isinstance(node.op, GpuConv) and 
-        node.op.border_mode=='full' and 
+    if not isinstance(node.op, GpuConv):
+        return
+    if (node.op.border_mode=='full' and 
         node.op.subsample==(1,1)):
         img, kern = node.inputs
         img = gpu_contiguous(img)
         kern = gpu_contiguous(kern)
         gpu_fft_conv = GpuFFTConvOp(node.op.border_mode, check=node.op.verbose)
         return [gpu_fft_conv(img,kern)]
+    if (config.GpuFFTConvOp.valid and
+        node.op.border_mode=='valid' and
+        node.op.subsample==(1,1) and
+        node.op.kshp and node.op.imshp):
+
+        kshp = node.op.kshp
+        ishp = node.op.imshp[1:]
+        pad_up = kshp[0]-1
+        pad_left = kshp[1]-1
+        size_height = ishp[0]-kshp[0]+1
+        size_width = ishp[1]-kshp[1]+1
+        img = gpu_contiguous(node.inputs[0])
+        kern = gpu_contiguous(node.inputs[1])
+        gpu_fft_conv = GpuFFTConvOp("full", check=node.op.verbose)(img,kern)[:,:,pad_up:pad_up+size_height,pad_left:pad_left+size_width]
+        gpu_fft_conv = cuda.gpu_from_host(gpu_fft_conv)
+        return [gpu_fft_conv]
+
