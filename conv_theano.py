@@ -34,7 +34,7 @@ if __name__ == "__main__":
         num_kernels = 50
         kernel_dim = 5
     else:
-        batch_size = 1
+        batch_size = 2
         num_images = 4
         image_dim = 4
         num_kernels = 2
@@ -93,13 +93,8 @@ if __name__ == "__main__":
         import pdb;pdb.set_trace()
         print "use unknow"
 
-    if not RUN_SPEED_TEST:
-        print "RESULT (batch_size x num_kernels x convolved_rows x convolved_cols)"
-        print f(test_images)
-
-    if RUN_SPEED_TEST:
-        print "batch size: %(batch_size)s, num_images: %(num_images)s, image size: %(image_dim)sx%(image_dim)s, " \
-              "num_kernels: %(num_kernels)s, kernel size: %(kernel_dim)sx%(kernel_dim)s"%locals()
-        for iteration in xrange(iter):
-            f()
+    print "batch size: %(batch_size)s, num_images: %(num_images)s, image size: %(image_dim)sx%(image_dim)s, " \
+        "num_kernels: %(num_kernels)s, kernel size: %(kernel_dim)sx%(kernel_dim)s"%locals()
+    for iteration in xrange(iter):
+        f()
 
