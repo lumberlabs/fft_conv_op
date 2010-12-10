@@ -119,7 +119,7 @@ int check_success(char * str){
     cudaThreadSynchronize();
     cudaError_t sts = cudaGetLastError();
     if (cudaSuccess == sts){
-        if (verbose) fprintf(stderr,"INFO: GpuFFTConvOp %%s succeded\\n", str);
+        if (verbose>1) fprintf(stderr,"INFO: GpuFFTConvOp %%s succeded\\n", str);
         return true;
     }else{
         PyErr_Format(PyExc_TypeError, "INFO: GpuFFTConvOp %%s failed (%%s). Run with this op in debug mode.", str, cudaGetErrorString(sts));
@@ -142,10 +142,14 @@ uint32 next_power_of_two(uint32 i) {
 }
 
 // TODO: is it possible to optimize this?
+//blockDim.x=num_padded=nbatch * nstack + nkern * nstack
+//blockDim.y=1
+//blockThread.x=padded_rows or less
+//blockThread.y=padded_cols
 __global__ void pad_images_and_kernels(float *images,
                                        float *kernels,
                                        float *dest,
-                                       uint32 total_images,
+                                       uint32 total_images,//nbatch * nstack
                                        uint32 image_rows,
                                        uint32 image_cols,
                                        uint32 kernel_rows,
