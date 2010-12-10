@@ -440,6 +440,8 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
          old_padded_dimensions[0] == padded_dimensions[0] &&
          old_padded_dimensions[1] == padded_dimensions[1] &&
          old_num_padded == num_padded)){
+        if(fwd_plan)
+            cufftDestroy(fwd_plan);
         if(verbose)
             printf("create new fwd_plan %%p old_padded_dimensions=(%%d,%%d) padded_dimensions=(%%d,%%d) old_num_padded=%%d num_padded=%%d\\n", fwd_plan,
             old_padded_dimensions[0],old_padded_dimensions[1],padded_dimensions[0],padded_dimensions[1],old_num_padded,num_padded);
@@ -457,6 +459,8 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
          old_padded_dimensions[0] == padded_dimensions[0] &&
          old_padded_dimensions[1] == padded_dimensions[1] &&
          old_inv_plan_size == (nbatch * nkern * nstack))){
+        if(inv_plan)
+            cufftDestroy(inv_plan);
         if(verbose)
             printf("create new inv_plan %%p old_padded_dimensions=(%%d,%%d) padded_dimensions=(%%d,%%d) old_inv_plan_size=%%d inv_plan_size=%%d\\n", inv_plan,
             old_padded_dimensions[0],old_padded_dimensions[1],padded_dimensions[0],padded_dimensions[1],old_inv_plan_size,nbatch * nkern * nstack);
