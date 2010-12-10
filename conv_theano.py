@@ -1,6 +1,10 @@
 #!/usr/bin/env python
+#TODO: test not square case
+
+import sys
 
 import numpy
+
 import theano
 import theano.tensor as T
 from theano.tensor.nnet import conv
@@ -8,14 +12,40 @@ from theano.tensor.nnet import conv
 RUN_SPEED_TEST = True
 
 if __name__ == "__main__":
+    fft = False
+    check = False
+    iter = 1000
+    valid = False
+    mode = 'full'
+    for param in sys.argv[1:]:
+        if param == '--fft':
+            fft = True
+        elif param == '--check':
+            check = True
+        elif param.startswith('--iter='):
+            iter = int(param[7:])
+        elif param == '--valid':
+            valid = True
+            mode = 'valid'
+        else:
+            print "param '%s' not know"%param
+            sys.exit(0)
+    if fft:
+        from fft_conv_op import GpuFFTConvOp
+
+
     if RUN_SPEED_TEST:
         batch_size = 500
         num_images = 1
         image_dim = 28
         num_kernels = 50
-        kernel_dim = 5
+        kernel_dim = 4
+        #we want to test case that are not square
+        assert numpy.sqrt(image_dim+kernel_dim-1)!=int(numpy.sqrt(image_dim+kernel_dim-1))
+        if valid:
+            batch_size = 200
     else:
-        batch_size = 1
+        batch_size = 2
         num_images = 4
         image_dim = 4
         num_kernels = 2
@@ -60,23 +90,21 @@ if __name__ == "__main__":
                            filters=shared_kernels, 
                            filter_shape=filter_shape,
                            image_shape=image_shape,
-                           border_mode="full")
+                           border_mode=mode,
+                           verbose=int(check))
     f = theano.function(inputs=[], updates={shared_output:conv_out})
     topo = f.maker.env.toposort()
     if any([node.op.__class__.__name__=="ConvOp" for node in topo]):
         print "use CPU"
     elif any([node.op.__class__.__name__=="GpuConv" for node in topo]):
-        print "use GPU"
+        print "use GPUConv"
+    elif any([node.op.__class__.__name__=="GpuFFTConvOp" for node in topo]):
+        print "use GpuFFTConvOp"
     else:
-        print "use unknow"
+        print "use unknow gpu version"
 
-    if not RUN_SPEED_TEST:
-        print "RESULT (batch_size x num_kernels x convolved_rows x convolved_cols)"
-        print f(test_images)
-
-    if RUN_SPEED_TEST:
-        print "batch size: %(batch_size)s, num_images: %(num_images)s, image size: %(image_dim)sx%(image_dim)s, " \
-              "num_kernels: %(num_kernels)s, kernel size: %(kernel_dim)sx%(kernel_dim)s"%locals()
-        for iteration in xrange(1000):
-            f()
+    print "batch size: %(batch_size)s, num_images: %(num_images)s, image size: %(image_dim)sx%(image_dim)s, " \
+        "num_kernels: %(num_kernels)s, kernel size: %(kernel_dim)sx%(kernel_dim)s"%locals()
+    for iteration in xrange(iter):
+        f()
 
