@@ -10,12 +10,12 @@ TODO: extend to cover more case, as in many case we will crash!
 
 
 from theano.gof import Apply, Op
-from theano.sandbox.cuda.basic_ops import as_cuda_ndarray_variable, CudaNdarrayType
+from theano.sandbox.cuda.basic_ops import as_cuda_ndarray_variable, CudaNdarrayType, gpu_contiguous
 
 print "\n\n\n WARNING: CURRENT VERSION of GpuFFTConvOp is not well optimized! \n\n\n"
 
 class GpuFFTConvOp(Op):
-    __attrnames = ['out_mode', 'check', 'debug']
+    __attrnames = ['out_mode', 'check', 'debug', 'more_memory']
 
     def __init__(self, output_mode='valid', check=False, debug=False,
                  more_memory=True):
