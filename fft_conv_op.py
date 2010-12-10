@@ -682,6 +682,7 @@ if(!check_success("cudaFree(device_mem)")){
 from theano.sandbox.cuda.opt import register_opt
 from theano.sandbox.cuda.blas import GpuConv
 from theano.gof import local_optimizer
+import theano.sandbox.cuda as cuda
 
 @register_opt()
 @local_optimizer([GpuConv])
@@ -694,5 +695,7 @@ def local_gpu_fft_conv(node):
         node.op.border_mode=='full' and 
         node.op.subsample==(1,1)):
         img, kern = node.inputs
+        img = gpu_contiguous(img)
+        kern = gpu_contiguous(kern)
         gpu_fft_conv = GpuFFTConvOp(node.op.border_mode, check=node.op.verbose)
         return [gpu_fft_conv(img,kern)]
