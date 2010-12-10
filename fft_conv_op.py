@@ -17,11 +17,18 @@ print "\n\n\n WARNING: CURRENT VERSION of GpuFFTConvOp is not well optimized! \n
 class GpuFFTConvOp(Op):
     __attrnames = ['out_mode', 'check', 'debug']
 
-    def __init__(self, output_mode='valid', check=False, debug=False):
+    def __init__(self, output_mode='valid', check=False, debug=False,
+                 more_memory=True):
+        """
+        :param more_memory: if True, we will keep the fft plan between each call
+                            This use more memory but is faster
+                            Their is no way to my knowledge to recover this 
+                            memory after we finished using this fct.
+        """
         self.out_mode = output_mode
         self.check=check
         self.debug=debug
-
+        self.more_memory = more_memory
         if self.out_mode!='full':
             import pdb;pdb.set_trace()
             raise Exception(self.__class__.__name__+" support only the full mode for now")
@@ -102,6 +109,12 @@ typedef int int32;
 
 int verbose = 0;
 %(check)s
+
+cufftHandle fwd_plan;
+cufftHandle inv_plan;
+int32 old_padded_dimensions[2]={-1,-1};
+uint32 old_num_padded = 0;
+uint32 old_inv_plan_size = 0;
 
 int check_success(char * str){
     cudaThreadSynchronize();
@@ -234,8 +247,7 @@ __global__ void add_across_images_and_normalize(float *inverse_transformed,
         assert node.inputs[0].type.dtype == node.inputs[1].type.dtype
         d=locals()
         d.update(sub)
-        subsample_rows=1
-        subsample_cols=1
+        more_memory = int(self.more_memory)
         return """
     const int shared_avail = SHARED_SIZE-150;//144 is the biggest static shared size used with compiling this file.
     CudaNdarray *img = %(img)s;
@@ -347,32 +359,47 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
 //SHOULD BE DONE ONLY ONCE
     // assume we can pay the planning price just once and amortize it away, so do the planning up front
     int32 padded_dimensions[2] = {padded_rows, padded_cols};
-
-    cufftHandle fwd_plan;
-    cufftResult plan_result = cufftPlanMany(&fwd_plan, // plan
+    if(!(fwd_plan &&
+         old_padded_dimensions[0] == padded_dimensions[0] &&
+         old_padded_dimensions[1] == padded_dimensions[1] &&
+         old_num_padded == num_padded)){
+        if(verbose)
+            printf("create new fwd_plan %%p old_padded_dimensions=(%%d,%%d) padded_dimensions=(%%d,%%d) old_num_padded=%%d num_padded=%%d\\n", fwd_plan,
+            old_padded_dimensions[0],old_padded_dimensions[1],padded_dimensions[0],padded_dimensions[1],old_num_padded,num_padded);
+        cufftResult plan_result = cufftPlanMany(&fwd_plan, // plan
                                             2, // rank
                                             padded_dimensions, // dimensions
                                             NULL, 1, 0, NULL, 1, 0, // boilerplate for contiguous access (non-contiguous access not supported now)
                                             CUFFT_R2C, // fwd transform, real to complex
                                             num_padded // fft batch size
                                            );
-    cufftSetCompatibilityMode(fwd_plan, CUFFT_COMPATIBILITY_NATIVE); // performance only
-    
-    cufftHandle inv_plan;
-    cufftPlanMany(&inv_plan, // plan
+        cufftSetCompatibilityMode(fwd_plan, CUFFT_COMPATIBILITY_NATIVE); // performance only
+    }
+
+    if(!(inv_plan &&
+         old_padded_dimensions[0] == padded_dimensions[0] &&
+         old_padded_dimensions[1] == padded_dimensions[1] &&
+         old_inv_plan_size == (nbatch * nkern * nstack))){
+        if(verbose)
+            printf("create new inv_plan %%p old_padded_dimensions=(%%d,%%d) padded_dimensions=(%%d,%%d) old_inv_plan_size=%%d inv_plan_size=%%d\\n", inv_plan,
+            old_padded_dimensions[0],old_padded_dimensions[1],padded_dimensions[0],padded_dimensions[1],old_inv_plan_size,nbatch * nkern * nstack);
+        cufftPlanMany(&inv_plan, // plan
                   2, // rank
                   padded_dimensions, // dimensions
                   NULL, 1, 0, NULL, 1, 0, // boilerplate for contiguous access (non-contiguous access not supported now)
                   CUFFT_C2R, // inv transform, complex to real
                   nbatch * nkern * nstack // ifft batch size
                  );
-     // CUFFT_COMPATIBILITY_NATIVE needed to prevent extra padding, so output is compact
-     // and nicely accessible via c pointer arithmetic
-     cufftSetCompatibilityMode(inv_plan, CUFFT_COMPATIBILITY_NATIVE);
-
-
-
-
+         // CUFFT_COMPATIBILITY_NATIVE needed to prevent extra padding, 
+         // so output is compact and nicely accessible via c pointer arithmetic
+         cufftSetCompatibilityMode(inv_plan, CUFFT_COMPATIBILITY_NATIVE);
+     }
+     old_padded_dimensions[0] = padded_dimensions[0];
+     old_padded_dimensions[1] = padded_dimensions[1];
+     old_inv_plan_size = (nbatch * nkern * nstack);
+     old_padded_dimensions[0] = padded_dimensions[0];
+     old_padded_dimensions[1] = padded_dimensions[1];
+     old_num_padded = num_padded;
 
 //SHOULD BE DONE AT EACH CALL
 #if DEBUG
@@ -380,6 +407,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
 printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows%%d][padded_cols%%d]\\n",nbatch,nkern,nstack,padded_rows,padded_cols);
     float inv[nbatch][nkern][nstack][padded_rows][padded_cols];
 #endif
+
     dim3 adding_grid(nbatch, nkern);
     dim3 adding_threads(padded_rows, padded_cols);
     dim3 dim_grid(nbatch * nkern, nstack);
@@ -532,22 +560,28 @@ if(!check_success("add_across_images_and_normalize")){
         %(fail)s;
 }
 #endif
-    cufftDestroy(fwd_plan);
-#ifdef CHECK
-if(!check_success("cufftDestroy(fwd_plan)")){
+    if(!%(more_memory)s){
+        cufftDestroy(fwd_plan);
+        fwd_plan = NULL;
+    #ifdef CHECK
+    if(!check_success("cufftDestroy(fwd_plan)")){
         Py_XDECREF(out);
         out = NULL;
         %(fail)s;
-}
-#endif
-    cufftDestroy(inv_plan);
-#ifdef CHECK
-if(!check_success("cufftDestroy(inv_plan)")){
+    }
+    #endif
+    }
+    if(!%(more_memory)s){
+        cufftDestroy(inv_plan);
+        inv_plan = NULL;
+    #ifdef CHECK
+    if(!check_success("cufftDestroy(inv_plan)")){
         Py_XDECREF(out);
         out = NULL;
         %(fail)s;
-}
-#endif
+    }
+    #endif
+    }
     cudaFree(fft_input);
 #ifdef CHECK
 if(!check_success("cudaFree(fft_input)")){
