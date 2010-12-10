@@ -59,7 +59,6 @@ class GpuFFTConvOp(Op):
         return self.__class__.__name__+"{" +",".join(str((a, getattr(self, a))) for a in self.__attrnames)  + "}"
 
     def make_node(self, inputs, kerns):
-        # TODO: find a way to make ConvOp work for N-D (after NIPS09)
         """
         inputs - 4 dim: batches x stacksize x rows x cols
         kerns - 4 dim: nkern x stackidx x rows x cols
@@ -153,8 +152,6 @@ __global__ void pad_images_and_kernels(float *images,
                                        uint32 kernel_cols,
                                        uint32 padded_rows,
                                        uint32 padded_cols) {
-    uint32 row_index = threadIdx.x;
-    uint32 col_index = threadIdx.y;
     uint32 ik_offset = blockIdx.x;
     
     uint32 source_rows;
@@ -172,19 +169,21 @@ __global__ void pad_images_and_kernels(float *images,
         src = kernels;
         src_offset = ik_offset - total_images;
     }
+    uint32 col_index = threadIdx.y;
 
-    float out;
-    if(row_index >= source_rows || col_index >= source_cols) {
-        out = 0.0f;
-    } else {
-        out = src[src_offset * source_rows * source_cols + row_index * source_cols + col_index];
-    }
+    for(uint32 row_index = threadIdx.x; row_index<padded_rows; row_index+=blockDim.x){
+        float out;
+        if(row_index >= source_rows || col_index >= source_cols) {
+            out = 0.0f;
+        } else {
+            out = src[src_offset * source_rows * source_cols + row_index * source_cols + col_index];
+        }
     
-    dest[ik_offset * padded_rows * padded_cols + row_index * padded_cols + col_index] = out;
+        dest[ik_offset * padded_rows * padded_cols + row_index * padded_cols + col_index] = out;
+    }
 }
 
 // TODO: is it possible to optimize this? reduce access to global mem by loading into shared mem, etc.
-// TODO: what happens when element_length is bigger than the allowed num threads?
 __global__ void elementwise_image_kernel_multiply(cufftComplex *transformed,
                                                   cufftComplex *multiplied,
                                                   uint32 batch_size,
@@ -196,25 +195,26 @@ __global__ void elementwise_image_kernel_multiply(cufftComplex *transformed,
     uint32 kernel_index = batch_kernel_index %% num_kernels;
     uint32 image_index = blockIdx.y;
     uint32 element_index = threadIdx.x;
-    
-    cufftComplex *image_src = transformed
-                            + batch_index * num_images * element_length
-                            + image_index * element_length
-                            + element_index;
+    for(uint32 element_index = threadIdx.x;element_index<element_length;element_index+=blockDim.x){
+        cufftComplex *image_src = transformed
+                                + batch_index * num_images * element_length
+                                + image_index * element_length
+                                + element_index;
 
-    cufftComplex *transformed_kernels = transformed + batch_size * num_images * element_length;
-    cufftComplex *kernel_src = transformed_kernels
-                             + kernel_index * num_images * element_length
-                             + image_index * element_length
-                             + element_index;
+        cufftComplex *transformed_kernels = transformed + batch_size * num_images * element_length;
+        cufftComplex *kernel_src = transformed_kernels
+                                 + kernel_index * num_images * element_length
+                                 + image_index * element_length
+                                 + element_index;
 
-    cufftComplex *dest = multiplied
-                       + batch_index * num_kernels * num_images * element_length
-                       + kernel_index * num_images * element_length
-                       + image_index * element_length
-                       + element_index;
+        cufftComplex *dest = multiplied
+                           + batch_index * num_kernels * num_images * element_length
+                           + kernel_index * num_images * element_length
+                           + image_index * element_length
+                           + element_index;
 
     *dest = cuCmulf(*image_src, *kernel_src);
+    }
 }
 
 // TODO: is it possible to optimize this?
@@ -411,6 +411,7 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
     dim3 adding_grid(nbatch, nkern);
     dim3 adding_threads(padded_rows, padded_cols);
     dim3 dim_grid(nbatch * nkern, nstack);
+    dim3 dim_thread(padded_rows * transformed_cols);
 
     //create 4 temporary space in one cudaMalloc call to make it faster.
     int fft_input_size = sizeof(float) * num_padded * padded_rows * padded_cols;
@@ -442,7 +443,9 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
 
     // rearrange images and kernels to their new padded size, all contiguous
     // to each other, since that is what the batched fft requires right now
-    dim3 padding_threads(padded_rows, padded_cols); // TODO: how to handle padded_rows * padded_cols > 1024?
+    dim3 padding_threads(padded_rows, padded_cols);
+    assert(padded_cols<=512);
+    while(padding_threads.x*padding_threads.y>512)padding_threads.x--;
     pad_images_and_kernels<<<num_padded, padding_threads>>>(img->devdata,
                                                             kern->devdata,
                                                             fft_input,
@@ -491,7 +494,8 @@ if(!check_success("cufftExecR2C")){
 #endif
 
     // do elemwise multiplication
-    elementwise_image_kernel_multiply<<<dim_grid, padded_rows * transformed_cols>>>(
+    if(dim_thread.x>512)dim_thread.x=512;
+    elementwise_image_kernel_multiply<<<dim_grid, dim_thread>>>(
             transformed,
             multiplied,
             nbatch,
