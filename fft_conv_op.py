@@ -365,7 +365,10 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     float *fft_input = NULL;
     cufftComplex *transformed = NULL;
     cufftComplex *multiplied = NULL;
-    float *inverse_transformed = NULL ;
+    float *inverse_transformed = NULL;
+
+    gpu_timer_t timer;
+    float elapsed;
 
     if (img->nd != 4){
         PyErr_SetString(PyExc_ValueError, "GpuFFTConvOp required img of 4D");
@@ -665,7 +668,7 @@ if(!check_success("cufftExecC2R")){
 
 
     // sum across images and scale the results appropriately (cufft does non-normalized transforms)
-    gpu_timer_t timer = start_gpu_timer();
+    timer = start_gpu_timer();
     add_across_images_and_normalize<<<adding_grid, adding_threads>>>(
         inverse_transformed,
         out->devdata,
@@ -677,7 +680,7 @@ if(!check_success("cufftExecC2R")){
         out_len,
         out_wid,
         padded_rows * padded_cols); // normalization factor
-    float elapsed = stop_gpu_timer(timer);
+    elapsed = stop_gpu_timer(timer);
     fprintf(stderr, "add_across_images_and_normalize elapsed %%f", elapsed);
 #ifdef CHECK
 if(!check_success("add_across_images_and_normalize")){
