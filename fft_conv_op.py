@@ -392,15 +392,15 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     }
  
 
-    nbatch=CudaNdarray_HOST_DIMS(img)[0];
-    nkern=CudaNdarray_HOST_DIMS(kern)[0];
-    nstack=CudaNdarray_HOST_DIMS(img)[1];
-    img_wid=CudaNdarray_HOST_DIMS(img)[3];
-    img_len=CudaNdarray_HOST_DIMS(img)[2];
-    kern_wid=CudaNdarray_HOST_DIMS(kern)[3];
-    kern_len=CudaNdarray_HOST_DIMS(kern)[2];
-    out_wid=CudaNdarray_HOST_DIMS(out)[3];
-    out_len=CudaNdarray_HOST_DIMS(out)[2];
+    nbatch = CudaNdarray_HOST_DIMS(img)[0];
+    nkern = CudaNdarray_HOST_DIMS(kern)[0];
+    nstack = CudaNdarray_HOST_DIMS(img)[1];
+    img_wid = CudaNdarray_HOST_DIMS(img)[3];
+    img_len = CudaNdarray_HOST_DIMS(img)[2];
+    kern_wid = CudaNdarray_HOST_DIMS(kern)[3];
+    kern_len = CudaNdarray_HOST_DIMS(kern)[2];
+    out_wid = CudaNdarray_HOST_DIMS(out)[3];
+    out_len = CudaNdarray_HOST_DIMS(out)[2];
 
     padded_rows = next_power_of_two(out_len);
     padded_cols = next_power_of_two(out_wid);
@@ -409,8 +409,8 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     num_padded = nbatch * nstack + nkern * nstack; // total images + total kernels
     transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
 
-    adding_grid.x=nbatch;
-    adding_grid.y=nkern;
+    adding_grid.x = nbatch;
+    adding_grid.y = nkern;
     adding_threads.x = out_len;
     adding_threads.y = out_wid;
     dim_grid.x = nbatch * nkern;
@@ -419,10 +419,12 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     padding_threads.x = padded_rows;
     padding_threads.y = padded_cols;
 
-    while(adding_threads.x*adding_threads.y>512)adding_threads.x--;
-    if(adding_threads.y>512){
+    if(adding_threads.y > 512){
         PyErr_Format(PyExc_ValueError, "GpuFFTConvOp size too big for adding_threads.y %%d\\n",adding_threads.y);
         %(fail)s
+    }
+    while(adding_threads.x * adding_threads.y > 512) {
+        adding_threads.x--;
     }
 
 
