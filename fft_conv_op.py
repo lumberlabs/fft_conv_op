@@ -177,7 +177,7 @@ __global__ void pad_images_and_kernels(float *images,
     }
     uint32 col_index = threadIdx.y;
 
-    for(uint32 row_index = threadIdx.x; row_index<padded_rows; row_index+=blockDim.x){
+    for(int32 row_index = threadIdx.x; row_index<padded_rows; row_index+=blockDim.x){
         float out;
         if(row_index >= source_rows || col_index >= source_cols) {
             out = 0.0f;
@@ -201,7 +201,7 @@ __global__ void elementwise_image_kernel_multiply(cufftComplex *transformed,
     uint32 kernel_index = batch_kernel_index %% num_kernels;
     uint32 image_index = blockIdx.y;
     uint32 element_index = threadIdx.x;
-    for(uint32 element_index = threadIdx.x;element_index<element_length;element_index+=blockDim.x){
+    for(int32 element_index = threadIdx.x;element_index<element_length;element_index+=blockDim.x){
         cufftComplex *image_src = transformed
                                 + batch_index * num_images * element_length
                                 + image_index * element_length
@@ -242,9 +242,9 @@ __global__ void add_across_images_and_normalize(float *inverse_transformed,
     uint32 col = threadIdx.y;
     uint32 batch_index = blockIdx.x;
     uint32 kernel_index = blockIdx.y;
-    for(uint32 row = threadIdx.x;row<rows;row+=blockDim.x){
+    for(int32 row = threadIdx.x;row<rows;row+=blockDim.x){
         float sum = 0.0f;
-        for(uint32 image_index = 0; image_index < num_images; image_index++) {
+        for(int32 image_index = 0; image_index < num_images; image_index++) {
           float *image = inverse_transformed + (batch_index * num_kernels * num_images + kernel_index * num_images + image_index) * padded_rows * padded_cols;
           float *image_element = image + row * padded_cols + col;
           sum += *image_element;
@@ -560,9 +560,9 @@ if(!check_success("pad_images_and_kernels")){
     fprintf(stderr, "PADDED\\n");
     float pad[num_padded][padded_rows][padded_cols];
     cudaMemcpy(pad, fft_input, sizeof(float) * num_padded * padded_rows * padded_cols, cudaMemcpyDeviceToHost);
-    for(uint32 n = 0; n < num_padded; n++) {
-        for(uint32 r = 0; r < padded_rows; r++) {
-            for(uint32 c = 0; c < padded_cols; c++) {
+    for(int32 n = 0; n < num_padded; n++) {
+        for(int32 r = 0; r < padded_rows; r++) {
+            for(int32 c = 0; c < padded_cols; c++) {
                 fprintf(stderr,
                         "%%.0f ", pad[n][r][c]);
             }
@@ -625,12 +625,12 @@ if(!check_success("cufftExecC2R")){
     fprintf(stderr, "INVERSE_TRANSFORMED\\n");
     //float inv[nbatch][nkern][nstack][padded_rows][padded_cols];
     cudaMemcpy(inv, inverse_transformed, sizeof(float) * nbatch * nkern * nstack * padded_rows * padded_cols, cudaMemcpyDeviceToHost);
-    for(uint32 b = 0; b < nbatch; b++) {
-        for(uint32 k = 0; k < nkern; k++) {
-            for(uint32 i = 0; i < nstack; i++) {
+    for(int32 b = 0; b < nbatch; b++) {
+        for(int32 k = 0; k < nkern; k++) {
+            for(int32 i = 0; i < nstack; i++) {
                 fprintf(stderr, "<trans b %%i, k %%i, i %%i>\\n", b, k, i);
-                for(uint32 r = 0; r < padded_rows; r++) {
-                    for(uint32 c = 0; c < padded_cols; c++) {
+                for(int32 r = 0; r < padded_rows; r++) {
+                    for(int32 c = 0; c < padded_cols; c++) {
                         fprintf(stderr,
                                 "%%.0f ", inv[b][k][i][r][c]);
                     }
