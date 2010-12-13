@@ -440,6 +440,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
         if(verbose)
             printf("create new fwd_plan %%p old_padded_dimensions=(%%d,%%d) padded_dimensions=(%%d,%%d) old_num_padded=%%d num_padded=%%d\\n", fwd_plan,
             old_padded_dimensions[0],old_padded_dimensions[1],padded_dimensions[0],padded_dimensions[1],old_num_padded,num_padded);
+        timer = start_gpu_timer();
         cufftResult plan_result = cufftPlanMany(&fwd_plan, // plan
                                                 2, // rank
                                                 padded_dimensions, // dimensions
@@ -447,6 +448,9 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
                                                 CUFFT_R2C, // fwd transform, real to complex
                                                 num_padded // fft batch size
                                                );
+        elapsed = stop_gpu_timer(timer);
+        fprintf(stderr, "create fwd plan elapsed: %%.2f\\n", elapsed);
+
         have_fwd_plan = 1;
         cufftSetCompatibilityMode(fwd_plan, CUFFT_COMPATIBILITY_NATIVE); // performance only
     }
