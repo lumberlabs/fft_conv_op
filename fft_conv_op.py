@@ -488,15 +488,17 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     multiplied_size = sizeof(cufftComplex) * nbatch * nkern * nstack * padded_rows * transformed_cols;
     inverse_transformed_size = sizeof(float) * nbatch * nkern * nstack * padded_rows * padded_cols;
 
-    timer = start_gpu_timer();
-    cudaMalloc(&device_mem, fft_input_size + transformed_size + multiplied_size + inverse_transformed_size);
-    elapsed = stop_gpu_timer(timer);
-    fprintf(stderr, "cudaMalloc elapsed: %%.2f\\n", elapsed);
-#ifdef CHECK
-    fprintf(stderr, "cudaMalloc(device_mem, %%d + %%d + %%d + %%d = %%d)",
-            fft_input_size, transformed_size, multiplied_size, inverse_transformed_size,
-            fft_input_size + transformed_size + multiplied_size + inverse_transformed_size);
-#endif
+    if(NULL == device_mem) {
+        timer = start_gpu_timer();
+        cudaMalloc(&device_mem, fft_input_size + transformed_size + multiplied_size + inverse_transformed_size);
+        elapsed = stop_gpu_timer(timer);
+        fprintf(stderr, "cudaMalloc elapsed: %%.2f\\n", elapsed);
+        #ifdef CHECK
+            fprintf(stderr, "cudaMalloc(device_mem, %%d + %%d + %%d + %%d = %%d)",
+                    fft_input_size, transformed_size, multiplied_size, inverse_transformed_size,
+                    fft_input_size + transformed_size + multiplied_size + inverse_transformed_size);
+        #endif
+    }
 
     fft_input = ((float*)device_mem);
     transformed = ((cufftComplex*)(fft_input+fft_input_size/sizeof(float)));
@@ -644,20 +646,23 @@ if(!check_success("add_across_images_and_normalize")){
     #endif
     }
 
-    timer = start_gpu_timer();
-    cudaFree(device_mem);
-    elapsed = stop_gpu_timer(timer);
-    fprintf(stderr, "cudaFree elapsed: %%.2f\\n", elapsed);
+    if(!%(more_memory)s){
+        timer = start_gpu_timer();
+        cudaFree(device_mem);
+        device_mem = NULL;
+        elapsed = stop_gpu_timer(timer);
+        fprintf(stderr, "cudaFree elapsed: %%.2f\\n", elapsed);
+        #ifdef CHECK
+        if(!check_success("cudaFree(device_mem)")){
+                Py_XDECREF(out);
+                out = NULL;
+                %(fail)s;
+        }
+        #endif
+    }
 
     fprintf(stderr, "\\n"); // blank line between runs
 
-#ifdef CHECK
-if(!check_success("cudaFree(device_mem)")){
-        Py_XDECREF(out);
-        out = NULL;
-        %(fail)s;
-}
-#endif
 
 //needed in to make the cudaThreadSynchronize and check if any of the previous
 //call failed.
