@@ -521,23 +521,11 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
         #endif
     }
 
-    fft_input = ((float*)device_mem);
-    transformed = ((cufftComplex*)(fft_input+fft_input_size/sizeof(float)));
-    multiplied = ((cufftComplex*)(transformed+transformed_size/sizeof(cufftComplex)));
-    inverse_transformed = ((float*)(multiplied+multiplied_size/sizeof(cufftComplex)));
-
-
-
-
-
-
-
-
-
-
-
-
-
+    char *device_mem_with_offset = device_mem;
+    fft_input = (float *)(device_mem_with_offset + 0);
+    transformed = (cufftComplex *)(device_mem_with_offset + fft_input_size);
+    multiplied = (cufftComplex *)(device_mem_with_offset + fft_input_size + transformed_size);
+    inverse_transformed = (float *)(device_mem_with_offset + fft_input_size + transformed_size + multiplied_size);
 
 
     // rearrange images and kernels to their new padded size, all contiguous
