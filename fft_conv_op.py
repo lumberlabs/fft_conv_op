@@ -681,7 +681,7 @@ if(!check_success("cufftExecC2R")){
         out_wid,
         padded_rows * padded_cols); // normalization factor
     elapsed = stop_gpu_timer(timer);
-    fprintf(stderr, "add_across_images_and_normalize elapsed: %%.2f\n\n", elapsed);
+    fprintf(stderr, "add_across_images_and_normalize elapsed: %%.2f\\n\\n", elapsed);
 #ifdef CHECK
 if(!check_success("add_across_images_and_normalize")){
         printf("add_across_images_and_normalize failed dim_grid=(%%d,%%d) nb_threads=(%%d,%%d) nstack=%%d nbatch=%%d nkern=%%d normalization_factor=%%d\\n",
