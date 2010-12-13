@@ -200,6 +200,8 @@ __global__ void pad_images_and_kernels(float *images,
 __global__ void elementwise_image_kernel_multiply(cufftComplex *transformed,
                                                   cufftComplex *multiplied,
                                                   uint32 batch_size,
+                                                  uint32 chunk_size,
+                                                  uint32 chunk_index,
                                                   uint32 num_kernels,
                                                   uint32 num_images,
                                                   uint32 element_length) {
@@ -210,7 +212,7 @@ __global__ void elementwise_image_kernel_multiply(cufftComplex *transformed,
     uint32 element_index = threadIdx.x;
     for(int32 element_index = threadIdx.x;element_index<element_length;element_index+=blockDim.x){
         cufftComplex *image_src = transformed
-                                + batch_index * num_images * element_length
+                                + (chunk_size * chunk_index + batch_index) * num_images * element_length
                                 + image_index * element_length
                                 + element_index;
 
@@ -578,9 +580,12 @@ if(!check_success("cufftExecR2C")){
             dim_thread.x = 512;
         }
         timer = start_gpu_timer();
+
         elementwise_image_kernel_multiply<<<dim_grid, dim_thread>>>(transformed,
                                                                     multiplied,
+                                                                    batch_size,
                                                                     BATCHES_PER_CHUNK,
+                                                                    chunk_index,
                                                                     nkern,
                                                                     nstack,
                                                                     padded_rows * transformed_cols);
