@@ -18,17 +18,23 @@ class GpuFFTConvOp(Op):
     __attrnames = ['out_mode', 'check', 'debug', 'more_memory']
 
     def __init__(self, output_mode='valid', check=False, debug=False,
-                 more_memory=True):
+                 more_memory=True, lots_more_memory=False):
         """
         :param more_memory: if True, we will keep the fft plan between each call
                             This use more memory but is faster
                             Their is no way to my knowledge to recover this 
                             memory after we finished using this fct.
+        :param lots_more_memory: if True, we will keep the gpu scratch space between each call
+                                 This uses WAY more memory but is faster yet
+                                 Their is no way to my knowledge to recover this 
+                                 memory after we finished using this fct.
+
         """
         self.out_mode = output_mode
         self.check=check
         self.debug=debug
         self.more_memory = more_memory
+        self.lots_more_memory = lots_more_memory
         if self.out_mode!='full':
             import pdb;pdb.set_trace()
             raise Exception(self.__class__.__name__+" support only the full mode for now")
@@ -287,6 +293,7 @@ float stop_gpu_timer(gpu_timer_t timer) {
         d=locals()
         d.update(sub)
         more_memory = int(self.more_memory)
+        lots_more_memory = int(self.lots_more_memory)
         return """
     const int shared_avail = SHARED_SIZE-150;//144 is the biggest static shared size used with compiling this file.
     CudaNdarray *img = %(img)s;
@@ -650,7 +657,7 @@ if(!check_success("add_across_images_and_normalize")){
     #endif
     }
 
-    if(!%(more_memory)s){
+    if(!%(lots_more_memory)s){
         timer = start_gpu_timer();
         cudaFree(device_mem);
         device_mem = NULL;
