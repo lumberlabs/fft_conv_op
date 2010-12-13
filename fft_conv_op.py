@@ -255,7 +255,7 @@ __global__ void add_across_images_and_normalize(float *inverse_transformed,
     uint32 col = threadIdx.y;
     uint32 batch_index = blockIdx.x;
     uint32 kernel_index = blockIdx.y;
-    for(int32 row = threadIdx.x;row<rows;row+=blockDim.x){
+    for(int32 row = threadIdx.x; row < rows; row += blockDim.x) {
         float sum = 0.0f;
         for(int32 image_index = 0; image_index < num_images; image_index++) {
           float *image = inverse_transformed + (batch_index * num_kernels * num_images + kernel_index * num_images + image_index) * padded_rows * padded_cols;
