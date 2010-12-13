@@ -556,22 +556,6 @@ if(!check_success("pad_images_and_kernels")){
 }
 #endif
 
-#if DEBUG
-    fprintf(stderr, "PADDED\\n");
-    float pad[num_padded][padded_rows][padded_cols];
-    cudaMemcpy(pad, fft_input, sizeof(float) * num_padded * padded_rows * padded_cols, cudaMemcpyDeviceToHost);
-    for(int32 n = 0; n < num_padded; n++) {
-        for(int32 r = 0; r < padded_rows; r++) {
-            for(int32 c = 0; c < padded_cols; c++) {
-                fprintf(stderr,
-                        "%%.0f ", pad[n][r][c]);
-            }
-            fprintf(stderr, "\\n");
-        }
-        fprintf(stderr, "\\n");
-    }
-#endif
-    
     // perform forward fft
     timer = start_gpu_timer();
     cufftExecR2C(fwd_plan, fft_input, transformed);
@@ -620,28 +604,6 @@ if(!check_success("cufftExecC2R")){
         %(fail)s;
 }
 #endif
-
-#if DEBUG
-    fprintf(stderr, "INVERSE_TRANSFORMED\\n");
-    //float inv[nbatch][nkern][nstack][padded_rows][padded_cols];
-    cudaMemcpy(inv, inverse_transformed, sizeof(float) * nbatch * nkern * nstack * padded_rows * padded_cols, cudaMemcpyDeviceToHost);
-    for(int32 b = 0; b < nbatch; b++) {
-        for(int32 k = 0; k < nkern; k++) {
-            for(int32 i = 0; i < nstack; i++) {
-                fprintf(stderr, "<trans b %%i, k %%i, i %%i>\\n", b, k, i);
-                for(int32 r = 0; r < padded_rows; r++) {
-                    for(int32 c = 0; c < padded_cols; c++) {
-                        fprintf(stderr,
-                                "%%.0f ", inv[b][k][i][r][c]);
-                    }
-                    fprintf(stderr, "\\n");
-                }
-                fprintf(stderr, "\\n");
-            }
-        }
-    }
-#endif
-
 
     // sum across images and scale the results appropriately (cufft does non-normalized transforms)
     timer = start_gpu_timer();
