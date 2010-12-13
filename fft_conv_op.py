@@ -226,7 +226,7 @@ __global__ void elementwise_image_kernel_multiply(cufftComplex *transformed,
                            + image_index * element_length
                            + element_index;
 
-    *dest = cuCmulf(*image_src, *kernel_src);
+        *dest = cuCmulf(*image_src, *kernel_src);
     }
 }
 
