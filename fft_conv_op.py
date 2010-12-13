@@ -332,17 +332,6 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     int kern_stride_stack;
     int kern_stride_nkern;
 
-    int img_size;
-    int kern_size;
-    int out_size;
-    int img_size_byte;
-    int kern_size_byte;
-    //padded image sizes
-    int img_wid_padded;
-    int img_len_padded;
-    int img_size_padded;
-    int img_size_padded_byte;
-
     uint32 padded_rows;
     uint32 padded_cols;
     int32 padded_dimensions[2];
@@ -430,18 +419,6 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     kern_stride_row=CudaNdarray_HOST_STRIDES(kern)[2];
     kern_stride_stack= CudaNdarray_HOST_STRIDES(kern)[1];
     kern_stride_nkern=CudaNdarray_HOST_STRIDES(kern)[0];
-
-    img_size=img_len*img_wid;
-    kern_size=kern_len*kern_wid;
-    out_size=out_len*out_wid;
-    img_size_byte = img_size*sizeof(float);
-    kern_size_byte = kern_size*sizeof(float);
-    //padded image sizes
-    img_wid_padded=img_wid+2*kern_wid-2;
-    img_len_padded=img_len+2*kern_len-2;
-    img_size_padded=img_len_padded * img_wid_padded;
-    img_size_padded_byte = img_size_padded*sizeof(float);
-
 
     padded_rows = next_power_of_two(out_len);
     padded_cols = next_power_of_two(out_wid);
