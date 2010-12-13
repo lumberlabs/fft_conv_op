@@ -369,6 +369,8 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
 
     gpu_timer_t timer;
     float elapsed;
+    gpu_timer_t total_timer;
+    float total_elapsed;
 
     if (img->nd != 4){
         PyErr_SetString(PyExc_ValueError, "GpuFFTConvOp required img of 4D");
@@ -466,6 +468,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
         %(fail)s
     }
 
+    total_timer = start_gpu_timer();
 
 //SHOULD BE DONE ONLY ONCE
     // assume we can pay the planning price just once and amortize it away, so do the planning up front
@@ -740,6 +743,9 @@ if(!check_success("cudaFree(device_mem)")){
         %(fail)s;
 }
 #endif
+
+    total_elapsed = stop_gpu_timer(total_timer);
+    fprintf(stderr, "total elapsed: %%.2f\\n\\n", elapsed);
 
 //needed in to make the cudaThreadSynchronize and check if any of the previous
 //call failed.
