@@ -494,7 +494,7 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
     inverse_transformed_size = sizeof(float) * nbatch * nkern * nstack * padded_rows * padded_cols;
 
     timer = start_gpu_timer();
-    cudaMalloc(&device_mem, fft_input_size+transformed_size+multiplied_size+inverse_transformed_size);
+    cudaMalloc(&device_mem, fft_input_size + transformed_size + multiplied_size + inverse_transformed_size);
     elapsed = stop_gpu_timer(timer);
     fprintf(stderr, "cudaMalloc elapsed: %%.2f\\n", elapsed);
 #ifdef CHECK
