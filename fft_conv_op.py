@@ -493,15 +493,9 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     elapsed = stop_gpu_timer(timer);
     fprintf(stderr, "cudaMalloc elapsed: %%.2f\\n", elapsed);
 #ifdef CHECK
-char buff[1024];
-sprintf(buff,"cudaMalloc(device_mem,%%d+%%d+%%d+%%d=%%d)",
-        fft_input_size,transformed_size,multiplied_size,inverse_transformed_size,
-        fft_input_size+transformed_size+multiplied_size+inverse_transformed_size);
-if(!check_success(buff)){
-        Py_XDECREF(out);
-        out = NULL;
-        %(fail)s;
-}
+    fprintf(stderr, "cudaMalloc(device_mem, %%d + %%d + %%d + %%d = %%d)",
+            fft_input_size, transformed_size, multiplied_size, inverse_transformed_size,
+            fft_input_size + transformed_size + multiplied_size + inverse_transformed_size);
 #endif
 
     fft_input = ((float*)device_mem);
