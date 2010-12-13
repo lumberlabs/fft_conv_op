@@ -331,6 +331,12 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     int out_wid;
     int out_len;
 
+#define BATCHES_PER_CYCLE 50
+    // when the batch_size is big, to keep memory usage low,
+    // we do some of the work over several cycles.
+    int cycle_index;
+    int num_cycles;
+
     uint32 padded_rows;
     uint32 padded_cols;
     int32 padded_dimensions[2];
@@ -409,6 +415,8 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     out_wid = CudaNdarray_HOST_DIMS(out)[3];
     out_len = CudaNdarray_HOST_DIMS(out)[2];
 
+    num_cycles = nbatch / BATCHES_PER_CYCLE; // TODO: Handle fractional batches!!!!!!!
+
     padded_rows = next_power_of_two(out_len);
     padded_cols = next_power_of_two(out_wid);
     padded_dimensions[0] = padded_rows;
@@ -416,11 +424,11 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     num_padded = nbatch * nstack + nkern * nstack; // total images + total kernels
     transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
 
-    adding_grid.x = nbatch;
+    adding_grid.x = BATCHES_PER_CYCLE;
     adding_grid.y = nkern;
     adding_threads.x = out_len;
     adding_threads.y = out_wid;
-    dim_grid.x = nbatch * nkern;
+    dim_grid.x = BATCHES_PER_CYCLE * nkern;
     dim_grid.y = nstack;
     dim_thread = padded_rows * transformed_cols;
     padding_threads.x = padded_rows;
@@ -465,19 +473,19 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     if(!(have_inv_plan &&
          old_padded_dimensions[0] == padded_dimensions[0] &&
          old_padded_dimensions[1] == padded_dimensions[1] &&
-         old_inv_plan_size == (nbatch * nkern * nstack))){
+         old_inv_plan_size == (BATCHES_PER_CYCLE * nkern * nstack))){
         if(have_inv_plan) {
             cufftDestroy(inv_plan);
         }
         if(verbose)
             printf("create new inv_plan %%p old_padded_dimensions=(%%d,%%d) padded_dimensions=(%%d,%%d) old_inv_plan_size=%%d inv_plan_size=%%d\\n", inv_plan,
-            old_padded_dimensions[0],old_padded_dimensions[1],padded_dimensions[0],padded_dimensions[1],old_inv_plan_size,nbatch * nkern * nstack);
+            old_padded_dimensions[0],old_padded_dimensions[1],padded_dimensions[0],padded_dimensions[1],old_inv_plan_size,BATCHES_PER_CYCLE * nkern * nstack);
         cufftPlanMany(&inv_plan, // plan
                       2, // rank
                       padded_dimensions, // dimensions
                       NULL, 1, 0, NULL, 1, 0, // boilerplate for contiguous access (non-contiguous access not supported now)
                       CUFFT_C2R, // inv transform, complex to real
-                      nbatch * nkern * nstack // ifft batch size
+                      BATCHES_PER_CYCLE * nkern * nstack // ifft batch size
                      );
          have_inv_plan = 1;
          // CUFFT_COMPATIBILITY_NATIVE needed to prevent extra padding, 
@@ -486,7 +494,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
      }
      old_padded_dimensions[0] = padded_dimensions[0];
      old_padded_dimensions[1] = padded_dimensions[1];
-     old_inv_plan_size = (nbatch * nkern * nstack);
+     old_inv_plan_size = (BATCHES_PER_CYCLE * nkern * nstack);
      old_padded_dimensions[0] = padded_dimensions[0];
      old_padded_dimensions[1] = padded_dimensions[1];
      old_num_padded = num_padded;
@@ -496,8 +504,8 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     //create 4 temporary space in one cudaMalloc call to make it faster.
     fft_input_size = sizeof(float) * num_padded * padded_rows * padded_cols;
     transformed_size = sizeof(cufftComplex) * num_padded * padded_rows * transformed_cols;
-    multiplied_size = sizeof(cufftComplex) * nbatch * nkern * nstack * padded_rows * transformed_cols;
-    inverse_transformed_size = sizeof(float) * nbatch * nkern * nstack * padded_rows * padded_cols;
+    multiplied_size = sizeof(cufftComplex) * BATCHES_PER_CYCLE * nkern * nstack * padded_rows * transformed_cols;
+    inverse_transformed_size = sizeof(float) * BATCHES_PER_CYCLE * nkern * nstack * padded_rows * padded_cols;
 
     if(NULL == device_mem) {
         timer = start_gpu_timer();
@@ -571,13 +579,15 @@ if(!check_success("cufftExecR2C")){
 }
 #endif
 
+    for(cycle_index = 0; cycle_index < num_cycles; cycle_index++) {
+
     // do elemwise multiplication
     if(dim_thread.x>512)dim_thread.x=512;
     timer = start_gpu_timer();
     elementwise_image_kernel_multiply<<<dim_grid, dim_thread>>>(
             transformed,
             multiplied,
-            nbatch,
+            BATCHES_PER_CYCLE,
             nkern,
             nstack,
             padded_rows * transformed_cols);
@@ -613,7 +623,7 @@ if(!check_success("cufftExecC2R")){
         inverse_transformed,
         out->devdata,
         nstack,
-        nbatch,
+        BATCHES_PER_CYCLE,
         nkern,
         padded_rows,
         padded_cols,
@@ -622,11 +632,12 @@ if(!check_success("cufftExecC2R")){
         padded_rows * padded_cols); // normalization factor
     elapsed = stop_gpu_timer(timer);
     fprintf(stderr, "add_across_images_and_normalize elapsed: %%.2f\\n", elapsed);
+    }
 #ifdef CHECK
 if(!check_success("add_across_images_and_normalize")){
-        printf("add_across_images_and_normalize failed dim_grid=(%%d,%%d) nb_threads=(%%d,%%d) nstack=%%d nbatch=%%d nkern=%%d normalization_factor=%%d\\n",
+        printf("add_across_images_and_normalize failed dim_grid=(%%d,%%d) nb_threads=(%%d,%%d) nstack=%%d BATCHES_PER_CYCLE=%%d nkern=%%d normalization_factor=%%d\\n",
                adding_grid.x,adding_grid.y,
-               adding_threads.x,adding_threads.y,nstack,nbatch,nkern,padded_rows * padded_cols);
+               adding_threads.x,adding_threads.y,nstack,BATCHES_PER_CYCLE,nkern,padded_rows * padded_cols);
         Py_XDECREF(out);
         out = NULL;
         %(fail)s;
