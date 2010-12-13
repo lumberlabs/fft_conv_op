@@ -532,7 +532,10 @@ printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows
     multiplied_size = sizeof(cufftComplex) * nbatch * nkern * nstack * padded_rows * transformed_cols;
     inverse_transformed_size = sizeof(float) * nbatch * nkern * nstack * padded_rows * padded_cols;
 
+    timer = start_gpu_timer();
     cudaMalloc(&device_mem, fft_input_size+transformed_size+multiplied_size+inverse_transformed_size);
+    elapsed = stop_gpu_timer(timer);
+    fprintf(stderr, "cudaMalloc elapsed: %%.2f\\n", elapsed);
 #ifdef CHECK
 char buff[1024];
 sprintf(buff,"cudaMalloc(device_mem,%%d+%%d+%%d+%%d=%%d)",
@@ -580,7 +583,7 @@ if(!check_success(buff)){
                                                             padded_rows,
                                                             padded_cols);
     elapsed = stop_gpu_timer(timer);
-    fprintf(stderr, "pad_images_and_kernels elapsed: %%.2f\\n\\n", elapsed);
+    fprintf(stderr, "pad_images_and_kernels elapsed: %%.2f\\n", elapsed);
 
 #ifdef CHECK
 if(!check_success("pad_images_and_kernels")){
@@ -612,7 +615,7 @@ if(!check_success("pad_images_and_kernels")){
     timer = start_gpu_timer();
     cufftExecR2C(fwd_plan, fft_input, transformed);
     elapsed = stop_gpu_timer(timer);
-    fprintf(stderr, "fwd fft elapsed: %%.2f\\n\\n", elapsed);
+    fprintf(stderr, "fwd fft elapsed: %%.2f\\n", elapsed);
 #ifdef CHECK
 if(!check_success("cufftExecR2C")){
         Py_XDECREF(out);
@@ -632,7 +635,7 @@ if(!check_success("cufftExecR2C")){
             nstack,
             padded_rows * transformed_cols);
     elapsed = stop_gpu_timer(timer);
-    fprintf(stderr, "elementwise_image_kernel_multiply elapsed: %%.2f\\n\\n", elapsed);
+    fprintf(stderr, "elementwise_image_kernel_multiply elapsed: %%.2f\\n", elapsed);
 #ifdef CHECK
 if(!check_success("elementwise_image_kernel_multiply")){
         printf("elementwise_image_kernel_multiply failed dim_grid=(%%d,%%d) nb_threads=%%d\\n",
@@ -648,7 +651,7 @@ if(!check_success("elementwise_image_kernel_multiply")){
     timer = start_gpu_timer();
     cufftExecC2R(inv_plan, multiplied, inverse_transformed);
     elapsed = stop_gpu_timer(timer);
-    fprintf(stderr, "inverse fft elapsed: %%.2f\\n\\n", elapsed);
+    fprintf(stderr, "inverse fft elapsed: %%.2f\\n", elapsed);
 #ifdef CHECK
 if(!check_success("cufftExecC2R")){
         Py_XDECREF(out);
@@ -693,7 +696,7 @@ if(!check_success("cufftExecC2R")){
         out_wid,
         padded_rows * padded_cols); // normalization factor
     elapsed = stop_gpu_timer(timer);
-    fprintf(stderr, "add_across_images_and_normalize elapsed: %%.2f\\n\\n", elapsed);
+    fprintf(stderr, "add_across_images_and_normalize elapsed: %%.2f\\n", elapsed);
 #ifdef CHECK
 if(!check_success("add_across_images_and_normalize")){
         printf("add_across_images_and_normalize failed dim_grid=(%%d,%%d) nb_threads=(%%d,%%d) nstack=%%d nbatch=%%d nkern=%%d normalization_factor=%%d\\n",
