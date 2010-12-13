@@ -646,7 +646,7 @@ if(!check_success("add_across_images_and_normalize")){
     #endif
     }
 
-    if(!%(more_memory)s){
+    if(1) { //!%(more_memory)s){
         timer = start_gpu_timer();
         cudaFree(device_mem);
         device_mem = NULL;
