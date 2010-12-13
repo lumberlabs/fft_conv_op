@@ -568,6 +568,7 @@ if(!check_success(buff)){
     // to each other, since that is what the batched fft requires right now
     assert(padded_cols<=512);
     while(padding_threads.x*padding_threads.y>512)padding_threads.x--;
+    timer = start_gpu_timer();
     pad_images_and_kernels<<<num_padded, padding_threads>>>(img->devdata,
                                                             kern->devdata,
                                                             fft_input,
@@ -578,6 +579,8 @@ if(!check_success(buff)){
                                                             kern_wid,
                                                             padded_rows,
                                                             padded_cols);
+    elapsed = stop_gpu_timer(timer);
+    fprintf(stderr, "pad_images_and_kernels elapsed: %%.2f\\n\\n", elapsed);
 
 #ifdef CHECK
 if(!check_success("pad_images_and_kernels")){
@@ -606,7 +609,10 @@ if(!check_success("pad_images_and_kernels")){
 #endif
     
     // perform forward fft
+    timer = start_gpu_timer();
     cufftExecR2C(fwd_plan, fft_input, transformed);
+    elapsed = stop_gpu_timer(timer);
+    fprintf(stderr, "fwd fft elapsed: %%.2f\\n\\n", elapsed);
 #ifdef CHECK
 if(!check_success("cufftExecR2C")){
         Py_XDECREF(out);
@@ -617,6 +623,7 @@ if(!check_success("cufftExecR2C")){
 
     // do elemwise multiplication
     if(dim_thread.x>512)dim_thread.x=512;
+    timer = start_gpu_timer();
     elementwise_image_kernel_multiply<<<dim_grid, dim_thread>>>(
             transformed,
             multiplied,
@@ -624,6 +631,8 @@ if(!check_success("cufftExecR2C")){
             nkern,
             nstack,
             padded_rows * transformed_cols);
+    elapsed = stop_gpu_timer(timer);
+    fprintf(stderr, "elementwise_image_kernel_multiply elapsed: %%.2f\\n\\n", elapsed);
 #ifdef CHECK
 if(!check_success("elementwise_image_kernel_multiply")){
         printf("elementwise_image_kernel_multiply failed dim_grid=(%%d,%%d) nb_threads=%%d\\n",
