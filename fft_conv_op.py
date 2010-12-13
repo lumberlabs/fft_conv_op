@@ -732,7 +732,13 @@ if(!check_success("add_across_images_and_normalize")){
     #endif
     }
 
+    timer = start_gpu_timer();
     cudaFree(device_mem);
+    elapsed = stop_gpu_timer(timer);
+    fprintf(stderr, "cudaFree elapsed: %%.2f\\n", elapsed);
+
+    fprintf(stderr, "\\n"); // blank line between runs
+
 #ifdef CHECK
 if(!check_success("cudaFree(device_mem)")){
         Py_XDECREF(out);
