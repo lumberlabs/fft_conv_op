@@ -253,6 +253,29 @@ __global__ void add_across_images_and_normalize(float *inverse_transformed,
         *added_destination = sum / normalization_factor;
     }
 }
+
+typedef struct {
+    cudaEvent_t start;
+    cudaEvent_t stop;
+} gpu_timer_t;
+
+gpu_timer_t start_gpu_timer() {
+    gpu_timer_t timer;
+    cudaEventCreate(&timer.start);
+    cudaEventCreate(&timer.stop);
+    cudaEventRecord(timer.start, 0);
+}
+
+float stop_gpu_timer(gpu_timer_t timer) {
+    float elapsed;
+    cudaEventRecord(timer.stop, 0);
+    cudaEventSynchronize(timer.stop);
+    cudaEventElapsedTime(&elapsed, timer.start, timer.stop);
+    cudaEventDestroy(timer.start);
+    cudaEventDestroy(timer.stop);
+    
+}
+
  """ %locals()
 
     def c_code(self, node, name, (img, kern), (z, ), sub):
@@ -641,6 +664,7 @@ if(!check_success("cufftExecC2R")){
 
 
     // sum across images and scale the results appropriately (cufft does non-normalized transforms)
+    gpu_timer_t timer = start_gpu_timer();
     add_across_images_and_normalize<<<adding_grid, adding_threads>>>(
         inverse_transformed,
         out->devdata,
@@ -652,6 +676,8 @@ if(!check_success("cufftExecC2R")){
         out_len,
         out_wid,
         padded_rows * padded_cols); // normalization factor
+    float elapsed = stop_gpu_timer(timer);
+    fprintf(stderr, "add_across_images_and_normalize elapsed %%f", elapsed);
 #ifdef CHECK
 if(!check_success("add_across_images_and_normalize")){
         printf("add_across_images_and_normalize failed dim_grid=(%%d,%%d) nb_threads=(%%d,%%d) nstack=%%d nbatch=%%d nkern=%%d normalization_factor=%%d\\n",
