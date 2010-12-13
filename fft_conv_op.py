@@ -344,6 +344,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
 #define BATCHES_PER_CHUNK 50
     int chunk_index;
     int num_chunks;
+    int batches_in_current_chunk;
 
     uint32 padded_rows;
     uint32 padded_cols;
@@ -353,8 +354,8 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
 
     dim3 adding_grid;
     dim3 adding_threads;
-    dim3 dim_grid;
-    dim3 dim_thread;
+    dim3 mult_grid;
+    dim3 mult_thread;
     dim3 padding_threads;
 
     //create 4 temporary space in one cudaMalloc call to make it faster.
@@ -424,7 +425,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     out_wid = CudaNdarray_HOST_DIMS(out)[3];
     out_len = CudaNdarray_HOST_DIMS(out)[2];
 
-    num_chunks = nbatch / BATCHES_PER_CHUNK; // TODO: Handle fractional batches!!!!!!!
+    num_chunks = nbatch / BATCHES_PER_CHUNK + (nbatch %% BATCHES_PER_CHUNK == 0 ? 0 : 1);
 
     padded_rows = next_power_of_two(out_len);
     padded_cols = next_power_of_two(out_wid);
@@ -433,23 +434,11 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     num_padded = nbatch * nstack + nkern * nstack; // total images + total kernels
     transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
 
-    adding_grid.x = BATCHES_PER_CHUNK;
-    adding_grid.y = nkern;
-    adding_threads.x = out_len;
-    adding_threads.y = out_wid;
-    dim_grid.x = BATCHES_PER_CHUNK * nkern;
-    dim_grid.y = nstack;
-    dim_thread = padded_rows * transformed_cols;
-    padding_threads.x = padded_rows;
-    padding_threads.y = padded_cols;
-
-    if(adding_threads.y > 512){
+    if(out_wid > 512) {
         PyErr_Format(PyExc_ValueError, "GpuFFTConvOp size too big for adding_threads.y %%d\\n",adding_threads.y);
         %(fail)s
     }
-    while(adding_threads.x * adding_threads.y > 512) {
-        adding_threads.x--;
-    }
+
 
 
 //SHOULD BE DONE ONLY ONCE
@@ -542,6 +531,8 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
         padding_threads.x--;
     }
     timer = start_gpu_timer();
+    padding_threads.x = padded_rows;
+    padding_threads.y = padded_cols;
     pad_images_and_kernels<<<num_padded, padding_threads>>>(img->devdata,
                                                             kern->devdata,
                                                             fft_input,
@@ -580,27 +571,38 @@ if(!check_success("cufftExecR2C")){
 
     for(chunk_index = 0; chunk_index < num_chunks; chunk_index++) {
 
+        if(chunk_index * chunk_size > nbatch) {
+            // this is a partial chunk
+            batches_in_current_chunk = nbatch - (chunk_index - 1) * chunk_size;
+        } else {
+            batches_in_current_chunk = BATCHES_PER_CHUNK;
+        }
+
         // do elemwise multiplication
-        if(dim_thread.x > 512) {
-            dim_thread.x = 512;
+        if(mult_thread.x > 512) {
+            mult_thread.x = 512;
         }
         timer = start_gpu_timer();
 
-        elementwise_image_kernel_multiply<<<dim_grid, dim_thread>>>(transformed,
-                                                                    multiplied,
-                                                                    nbatch,
-                                                                    BATCHES_PER_CHUNK,
-                                                                    chunk_index,
-                                                                    nkern,
-                                                                    nstack,
-                                                                    padded_rows * transformed_cols);
+
+        mult_grid.x = batches_in_current_chunk * nkern;
+        mult_grid.y = nstack;
+        mult_thread = padded_rows * transformed_cols;
+        elementwise_image_kernel_multiply<<<mult_grid, mult_thread>>>(transformed,
+                                                                      multiplied,
+                                                                      nbatch,
+                                                                      BATCHES_PER_CHUNK,
+                                                                      chunk_index,
+                                                                      nkern,
+                                                                      nstack,
+                                                                      padded_rows * transformed_cols);
         elapsed = stop_gpu_timer(timer);
         fprintf(stderr, "elementwise_image_kernel_multiply elapsed: %%.2f\\n", elapsed);
 
         #ifdef CHECK
         if(!check_success("elementwise_image_kernel_multiply")){
-                printf("elementwise_image_kernel_multiply failed dim_grid=(%%d,%%d) nb_threads=%%d\\n",
-                       dim_grid.x,dim_grid.y,
+                printf("elementwise_image_kernel_multiply failed mult_grid=(%%d,%%d) nb_threads=%%d\\n",
+                       mult_grid.x,mult_grid.y,
                        padded_rows * transformed_cols);
                 Py_XDECREF(out);
                 out = NULL;
@@ -623,6 +625,13 @@ if(!check_success("cufftExecR2C")){
         #endif
 
         // sum across images and scale the results appropriately (cufft does non-normalized transforms)
+        adding_grid.x = batches_in_current_chunk;
+        adding_grid.y = nkern;
+        adding_threads.x = out_len;
+        adding_threads.y = out_wid;
+            while(adding_threads.x * adding_threads.y > 512) {
+            adding_threads.x--;
+        }
         timer = start_gpu_timer();
         add_across_images_and_normalize<<<adding_grid, adding_threads>>>(inverse_transformed,
                                                                          out->devdata,
@@ -641,7 +650,7 @@ if(!check_success("cufftExecR2C")){
 
         #ifdef CHECK
         if(!check_success("add_across_images_and_normalize")){
-                printf("add_across_images_and_normalize failed dim_grid=(%%d,%%d) nb_threads=(%%d,%%d) nstack=%%d BATCHES_PER_CHUNK=%%d nkern=%%d normalization_factor=%%d\\n",
+                printf("add_across_images_and_normalize failed adding_grid=(%%d,%%d) nb_threads=(%%d,%%d) nstack=%%d BATCHES_PER_CHUNK=%%d nkern=%%d normalization_factor=%%d\\n",
                        adding_grid.x,adding_grid.y,
                        adding_threads.x,adding_threads.y,nstack,BATCHES_PER_CHUNK,nkern,padded_rows * padded_cols);
                 Py_XDECREF(out);
