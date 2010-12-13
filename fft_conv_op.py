@@ -110,8 +110,10 @@ int verbose = 0;
 %(check)s
 
 cufftHandle fwd_plan;
+int have_fwd_plan = 0;
 cufftHandle inv_plan;
-int32 old_padded_dimensions[2]={-1,-1};
+int have_inv_plan = 0;
+int32 old_padded_dimensions[2] = {-1, -1};
 uint32 old_num_padded = 0;
 uint32 old_inv_plan_size = 0;
 
@@ -440,41 +442,45 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
 
 //SHOULD BE DONE ONLY ONCE
     // assume we can pay the planning price just once and amortize it away, so do the planning up front
-    if(!(fwd_plan &&
+    if(!(have_fwd_plan &&
          old_padded_dimensions[0] == padded_dimensions[0] &&
          old_padded_dimensions[1] == padded_dimensions[1] &&
-         old_num_padded == num_padded)){
-        if(fwd_plan)
+         old_num_padded == num_padded)) {
+        if(have_fwd_plan) {
             cufftDestroy(fwd_plan);
+        }
         if(verbose)
             printf("create new fwd_plan %%p old_padded_dimensions=(%%d,%%d) padded_dimensions=(%%d,%%d) old_num_padded=%%d num_padded=%%d\\n", fwd_plan,
             old_padded_dimensions[0],old_padded_dimensions[1],padded_dimensions[0],padded_dimensions[1],old_num_padded,num_padded);
         cufftResult plan_result = cufftPlanMany(&fwd_plan, // plan
-                                            2, // rank
-                                            padded_dimensions, // dimensions
-                                            NULL, 1, 0, NULL, 1, 0, // boilerplate for contiguous access (non-contiguous access not supported now)
-                                            CUFFT_R2C, // fwd transform, real to complex
-                                            num_padded // fft batch size
-                                           );
+                                                2, // rank
+                                                padded_dimensions, // dimensions
+                                                NULL, 1, 0, NULL, 1, 0, // boilerplate for contiguous access (non-contiguous access not supported now)
+                                                CUFFT_R2C, // fwd transform, real to complex
+                                                num_padded // fft batch size
+                                               );
+        have_fwd_plan = 1;
         cufftSetCompatibilityMode(fwd_plan, CUFFT_COMPATIBILITY_NATIVE); // performance only
     }
 
-    if(!(inv_plan &&
+    if(!(have_inv_plan &&
          old_padded_dimensions[0] == padded_dimensions[0] &&
          old_padded_dimensions[1] == padded_dimensions[1] &&
          old_inv_plan_size == (nbatch * nkern * nstack))){
-        if(inv_plan)
+        if(have_inv_plan) {
             cufftDestroy(inv_plan);
+        }
         if(verbose)
             printf("create new inv_plan %%p old_padded_dimensions=(%%d,%%d) padded_dimensions=(%%d,%%d) old_inv_plan_size=%%d inv_plan_size=%%d\\n", inv_plan,
             old_padded_dimensions[0],old_padded_dimensions[1],padded_dimensions[0],padded_dimensions[1],old_inv_plan_size,nbatch * nkern * nstack);
         cufftPlanMany(&inv_plan, // plan
-                  2, // rank
-                  padded_dimensions, // dimensions
-                  NULL, 1, 0, NULL, 1, 0, // boilerplate for contiguous access (non-contiguous access not supported now)
-                  CUFFT_C2R, // inv transform, complex to real
-                  nbatch * nkern * nstack // ifft batch size
-                 );
+                      2, // rank
+                      padded_dimensions, // dimensions
+                      NULL, 1, 0, NULL, 1, 0, // boilerplate for contiguous access (non-contiguous access not supported now)
+                      CUFFT_C2R, // inv transform, complex to real
+                      nbatch * nkern * nstack // ifft batch size
+                     );
+         have_inv_plan = 1;
          // CUFFT_COMPATIBILITY_NATIVE needed to prevent extra padding, 
          // so output is compact and nicely accessible via c pointer arithmetic
          cufftSetCompatibilityMode(inv_plan, CUFFT_COMPATIBILITY_NATIVE);
@@ -658,7 +664,8 @@ if(!check_success("add_across_images_and_normalize")){
 #endif
     if(!%(more_memory)s){
         cufftDestroy(fwd_plan);
-        fwd_plan = NULL;
+        fwd_plan = 0;
+        have_fwd_plan = 0;
     #ifdef CHECK
     if(!check_success("cufftDestroy(fwd_plan)")){
         Py_XDECREF(out);
@@ -669,7 +676,8 @@ if(!check_success("add_across_images_and_normalize")){
     }
     if(!%(more_memory)s){
         cufftDestroy(inv_plan);
-        inv_plan = NULL;
+        inv_plan = 0;
+        have_inv_plan = 0;
     #ifdef CHECK
     if(!check_success("cufftDestroy(inv_plan)")){
         Py_XDECREF(out);
