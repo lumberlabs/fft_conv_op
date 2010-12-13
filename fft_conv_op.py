@@ -212,7 +212,7 @@ __global__ void elementwise_image_kernel_multiply(cufftComplex *transformed,
     uint32 kernel_index = batch_kernel_index %% num_kernels;
     uint32 image_index = blockIdx.y;
     uint32 element_index = threadIdx.x;
-    for(int32 element_index = threadIdx.x;element_index<element_length;element_index+=blockDim.x){
+    for(int32 element_index = threadIdx.x; element_index < element_length; element_index += blockDim.x) {
         cufftComplex *image_src = transformed
                                 + (chunk_size * chunk_index + batch_index) * num_images * element_length
                                 + image_index * element_length
