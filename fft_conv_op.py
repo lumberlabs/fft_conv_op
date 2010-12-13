@@ -636,7 +636,10 @@ if(!check_success("elementwise_image_kernel_multiply")){
 #endif
 
     // do inverse fft
+    timer = start_gpu_timer();
     cufftExecC2R(inv_plan, multiplied, inverse_transformed);
+    elapsed = stop_gpu_timer(timer);
+    fprintf(stderr, "inverse fft elapsed: %%.2f\\n\\n", elapsed);
 #ifdef CHECK
 if(!check_success("cufftExecC2R")){
         Py_XDECREF(out);
