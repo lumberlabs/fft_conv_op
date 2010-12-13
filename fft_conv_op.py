@@ -88,7 +88,9 @@ class GpuFFTConvOp(Op):
         return Apply(self, [_inputs, _kerns], [output])
 
     def c_headers(self):
-        return ['<numpy/noprefix.h>', '<cuda.h>', '<cuda_runtime.h>','<cufft.h>','<cuComplex.h>','<stdlib.h>','<stdint.h>','<unistd.h>','<sys/time.h>','<time.h>']
+        return ['<numpy/noprefix.h>', '<cuda.h>', '<cuda_runtime.h>',
+                '<cufft.h>', '<cuComplex.h>', '<stdlib.h>', '<stdint.h>',
+                '<unistd.h>', '<sys/time.h>', '<time.h>']
 
     def c_libraries(self):
         return ['cufft']
