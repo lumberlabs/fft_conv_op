@@ -242,6 +242,8 @@ __global__ void add_across_images_and_normalize(float *inverse_transformed,
                                                 float *added,
                                                 uint32 num_images,
                                                 uint32 batch_size,
+                                                uint32 chunk_size,
+                                                uint32 chunk_index,
                                                 uint32 num_kernels,
                                                 uint32 padded_rows,
                                                 uint32 padded_cols,
@@ -258,7 +260,7 @@ __global__ void add_across_images_and_normalize(float *inverse_transformed,
           float *image_element = image + row * padded_cols + col;
           sum += *image_element;
         }
-        float *added_destination = added + batch_index * num_kernels * rows * cols + kernel_index * rows * cols + row * cols + col;
+        float *added_destination = added + (chunk_index * chunk_size + batch_index) * num_kernels * rows * cols + kernel_index * rows * cols + row * cols + col;
         *added_destination = sum / normalization_factor;
     }
 }
@@ -623,7 +625,9 @@ if(!check_success("cufftExecR2C")){
         add_across_images_and_normalize<<<adding_grid, adding_threads>>>(inverse_transformed,
                                                                          out->devdata,
                                                                          nstack,
+                                                                         nbatch,
                                                                          BATCHES_PER_CHUNK,
+                                                                         chunk_index,
                                                                          nkern,
                                                                          padded_rows,
                                                                          padded_cols,
