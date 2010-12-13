@@ -571,9 +571,9 @@ if(!check_success("cufftExecR2C")){
 
     for(chunk_index = 0; chunk_index < num_chunks; chunk_index++) {
 
-        if(chunk_index * chunk_size > nbatch) {
+        if(chunk_index * BATCHES_PER_CHUNK > nbatch) {
             // this is a partial chunk
-            batches_in_current_chunk = nbatch - (chunk_index - 1) * chunk_size;
+            batches_in_current_chunk = nbatch - (chunk_index - 1) * BATCHES_PER_CHUNK;
         } else {
             batches_in_current_chunk = BATCHES_PER_CHUNK;
         }
