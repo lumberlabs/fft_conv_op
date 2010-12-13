@@ -359,6 +359,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     int multiplied_size;
     int inverse_transformed_size;
 
+    char *device_mem_with_offset;
     float *fft_input = NULL;
     cufftComplex *transformed = NULL;
     cufftComplex *multiplied = NULL;
@@ -523,7 +524,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
         #endif
     }
 
-    char *device_mem_with_offset = device_mem;
+    device_mem_with_offset = device_mem;
     fft_input = (float *)(device_mem_with_offset + 0);
     transformed = (cufftComplex *)(device_mem_with_offset + fft_input_size);
     multiplied = (cufftComplex *)(device_mem_with_offset + fft_input_size + transformed_size);
