@@ -116,6 +116,7 @@ int have_inv_plan = 0;
 int32 old_padded_dimensions[2] = {-1, -1};
 uint32 old_num_padded = 0;
 uint32 old_inv_plan_size = 0;
+float *device_mem = NULL;
 
 int check_success(char * str){
     cudaThreadSynchronize();
@@ -341,7 +342,6 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     int multiplied_size;
     int inverse_transformed_size;
 
-    void * device_mem = NULL;
     float *fft_input = NULL;
     cufftComplex *transformed = NULL;
     cufftComplex *multiplied = NULL;
@@ -650,7 +650,7 @@ if(!check_success("add_across_images_and_normalize")){
     #endif
     }
 
-    if(1) { //!%(more_memory)s){
+    if(!%(more_memory)s){
         timer = start_gpu_timer();
         cudaFree(device_mem);
         device_mem = NULL;
