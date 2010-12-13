@@ -331,11 +331,13 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     int out_wid;
     int out_len;
 
-#define BATCHES_PER_CYCLE 50
-    // when the batch_size is big, to keep memory usage low,
-    // we do some of the work over several cycles.
-    int cycle_index;
-    int num_cycles;
+// when the batch_size is big, to keep memory usage low,
+// we do some of the work in chunks.
+// TODO: What is the best way to pick this number? Ideally, it should be small, but not too small, and should
+// cleanly divide nbatch.
+#define BATCHES_PER_CHUNK 50
+    int chunk_index;
+    int num_chunks;
 
     uint32 padded_rows;
     uint32 padded_cols;
@@ -415,7 +417,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     out_wid = CudaNdarray_HOST_DIMS(out)[3];
     out_len = CudaNdarray_HOST_DIMS(out)[2];
 
-    num_cycles = nbatch / BATCHES_PER_CYCLE; // TODO: Handle fractional batches!!!!!!!
+    num_chunks = nbatch / BATCHES_PER_CHUNK; // TODO: Handle fractional batches!!!!!!!
 
     padded_rows = next_power_of_two(out_len);
     padded_cols = next_power_of_two(out_wid);
@@ -424,11 +426,11 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     num_padded = nbatch * nstack + nkern * nstack; // total images + total kernels
     transformed_cols = padded_cols / 2 + 1; // only non-redundant complex coefficients are calculated
 
-    adding_grid.x = BATCHES_PER_CYCLE;
+    adding_grid.x = BATCHES_PER_CHUNK;
     adding_grid.y = nkern;
     adding_threads.x = out_len;
     adding_threads.y = out_wid;
-    dim_grid.x = BATCHES_PER_CYCLE * nkern;
+    dim_grid.x = BATCHES_PER_CHUNK * nkern;
     dim_grid.y = nstack;
     dim_thread = padded_rows * transformed_cols;
     padding_threads.x = padded_rows;
@@ -473,19 +475,19 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     if(!(have_inv_plan &&
          old_padded_dimensions[0] == padded_dimensions[0] &&
          old_padded_dimensions[1] == padded_dimensions[1] &&
-         old_inv_plan_size == (BATCHES_PER_CYCLE * nkern * nstack))){
+         old_inv_plan_size == (BATCHES_PER_CHUNK * nkern * nstack))){
         if(have_inv_plan) {
             cufftDestroy(inv_plan);
         }
         if(verbose)
             printf("create new inv_plan %%p old_padded_dimensions=(%%d,%%d) padded_dimensions=(%%d,%%d) old_inv_plan_size=%%d inv_plan_size=%%d\\n", inv_plan,
-            old_padded_dimensions[0],old_padded_dimensions[1],padded_dimensions[0],padded_dimensions[1],old_inv_plan_size,BATCHES_PER_CYCLE * nkern * nstack);
+            old_padded_dimensions[0],old_padded_dimensions[1],padded_dimensions[0],padded_dimensions[1],old_inv_plan_size,BATCHES_PER_CHUNK * nkern * nstack);
         cufftPlanMany(&inv_plan, // plan
                       2, // rank
                       padded_dimensions, // dimensions
                       NULL, 1, 0, NULL, 1, 0, // boilerplate for contiguous access (non-contiguous access not supported now)
                       CUFFT_C2R, // inv transform, complex to real
-                      BATCHES_PER_CYCLE * nkern * nstack // ifft batch size
+                      BATCHES_PER_CHUNK * nkern * nstack // ifft batch size
                      );
          have_inv_plan = 1;
          // CUFFT_COMPATIBILITY_NATIVE needed to prevent extra padding, 
@@ -494,7 +496,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
      }
      old_padded_dimensions[0] = padded_dimensions[0];
      old_padded_dimensions[1] = padded_dimensions[1];
-     old_inv_plan_size = (BATCHES_PER_CYCLE * nkern * nstack);
+     old_inv_plan_size = (BATCHES_PER_CHUNK * nkern * nstack);
      old_padded_dimensions[0] = padded_dimensions[0];
      old_padded_dimensions[1] = padded_dimensions[1];
      old_num_padded = num_padded;
@@ -504,8 +506,8 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
     //create 4 temporary space in one cudaMalloc call to make it faster.
     fft_input_size = sizeof(float) * num_padded * padded_rows * padded_cols;
     transformed_size = sizeof(cufftComplex) * num_padded * padded_rows * transformed_cols;
-    multiplied_size = sizeof(cufftComplex) * BATCHES_PER_CYCLE * nkern * nstack * padded_rows * transformed_cols;
-    inverse_transformed_size = sizeof(float) * BATCHES_PER_CYCLE * nkern * nstack * padded_rows * padded_cols;
+    multiplied_size = sizeof(cufftComplex) * BATCHES_PER_CHUNK * nkern * nstack * padded_rows * transformed_cols;
+    inverse_transformed_size = sizeof(float) * BATCHES_PER_CHUNK * nkern * nstack * padded_rows * padded_cols;
 
     if(NULL == device_mem) {
         timer = start_gpu_timer();
@@ -579,93 +581,97 @@ if(!check_success("cufftExecR2C")){
 }
 #endif
 
-    for(cycle_index = 0; cycle_index < num_cycles; cycle_index++) {
+    for(chunk_index = 0; chunk_index < num_chunks; chunk_index++) {
 
-    // do elemwise multiplication
-    if(dim_thread.x>512)dim_thread.x=512;
-    timer = start_gpu_timer();
-    elementwise_image_kernel_multiply<<<dim_grid, dim_thread>>>(
-            transformed,
-            multiplied,
-            BATCHES_PER_CYCLE,
-            nkern,
-            nstack,
-            padded_rows * transformed_cols);
-    elapsed = stop_gpu_timer(timer);
-    fprintf(stderr, "elementwise_image_kernel_multiply elapsed: %%.2f\\n", elapsed);
-#ifdef CHECK
-if(!check_success("elementwise_image_kernel_multiply")){
-        printf("elementwise_image_kernel_multiply failed dim_grid=(%%d,%%d) nb_threads=%%d\\n",
-               dim_grid.x,dim_grid.y,
-               padded_rows * transformed_cols);
-        Py_XDECREF(out);
-        out = NULL;
-        %(fail)s;
-}
-#endif
+        // do elemwise multiplication
+        if(dim_thread.x > 512) {
+            dim_thread.x = 512;
+        }
+        timer = start_gpu_timer();
+        elementwise_image_kernel_multiply<<<dim_grid, dim_thread>>>(transformed,
+                                                                    multiplied,
+                                                                    BATCHES_PER_CHUNK,
+                                                                    nkern,
+                                                                    nstack,
+                                                                    padded_rows * transformed_cols);
+        elapsed = stop_gpu_timer(timer);
+        fprintf(stderr, "elementwise_image_kernel_multiply elapsed: %%.2f\\n", elapsed);
 
-    // do inverse fft
-    timer = start_gpu_timer();
-    cufftExecC2R(inv_plan, multiplied, inverse_transformed);
-    elapsed = stop_gpu_timer(timer);
-    fprintf(stderr, "inverse fft elapsed: %%.2f\\n", elapsed);
-#ifdef CHECK
-if(!check_success("cufftExecC2R")){
-        Py_XDECREF(out);
-        out = NULL;
-        %(fail)s;
-}
-#endif
+        #ifdef CHECK
+        if(!check_success("elementwise_image_kernel_multiply")){
+                printf("elementwise_image_kernel_multiply failed dim_grid=(%%d,%%d) nb_threads=%%d\\n",
+                       dim_grid.x,dim_grid.y,
+                       padded_rows * transformed_cols);
+                Py_XDECREF(out);
+                out = NULL;
+                %(fail)s;
+        }
+        #endif
 
-    // sum across images and scale the results appropriately (cufft does non-normalized transforms)
-    timer = start_gpu_timer();
-    add_across_images_and_normalize<<<adding_grid, adding_threads>>>(
-        inverse_transformed,
-        out->devdata,
-        nstack,
-        BATCHES_PER_CYCLE,
-        nkern,
-        padded_rows,
-        padded_cols,
-        out_len,
-        out_wid,
-        padded_rows * padded_cols); // normalization factor
-    elapsed = stop_gpu_timer(timer);
-    fprintf(stderr, "add_across_images_and_normalize elapsed: %%.2f\\n", elapsed);
+        // do inverse fft
+        timer = start_gpu_timer();
+        cufftExecC2R(inv_plan, multiplied, inverse_transformed);
+        elapsed = stop_gpu_timer(timer);
+        fprintf(stderr, "inverse fft elapsed: %%.2f\\n", elapsed);
+
+        #ifdef CHECK
+        if(!check_success("cufftExecC2R")){
+                Py_XDECREF(out);
+                out = NULL;
+                %(fail)s;
+        }
+        #endif
+
+        // sum across images and scale the results appropriately (cufft does non-normalized transforms)
+        timer = start_gpu_timer();
+        add_across_images_and_normalize<<<adding_grid, adding_threads>>>(inverse_transformed,
+                                                                         out->devdata,
+                                                                         nstack,
+                                                                         BATCHES_PER_CHUNK,
+                                                                         nkern,
+                                                                         padded_rows,
+                                                                         padded_cols,
+                                                                         out_len,
+                                                                         out_wid,
+                                                                         padded_rows * padded_cols); // normalization factor
+        elapsed = stop_gpu_timer(timer);
+        fprintf(stderr, "add_across_images_and_normalize elapsed: %%.2f\\n", elapsed);
+
+        #ifdef CHECK
+        if(!check_success("add_across_images_and_normalize")){
+                printf("add_across_images_and_normalize failed dim_grid=(%%d,%%d) nb_threads=(%%d,%%d) nstack=%%d BATCHES_PER_CHUNK=%%d nkern=%%d normalization_factor=%%d\\n",
+                       adding_grid.x,adding_grid.y,
+                       adding_threads.x,adding_threads.y,nstack,BATCHES_PER_CHUNK,nkern,padded_rows * padded_cols);
+                Py_XDECREF(out);
+                out = NULL;
+                %(fail)s;
+        }
+        #endif
+
     }
-#ifdef CHECK
-if(!check_success("add_across_images_and_normalize")){
-        printf("add_across_images_and_normalize failed dim_grid=(%%d,%%d) nb_threads=(%%d,%%d) nstack=%%d BATCHES_PER_CYCLE=%%d nkern=%%d normalization_factor=%%d\\n",
-               adding_grid.x,adding_grid.y,
-               adding_threads.x,adding_threads.y,nstack,BATCHES_PER_CYCLE,nkern,padded_rows * padded_cols);
-        Py_XDECREF(out);
-        out = NULL;
-        %(fail)s;
-}
-#endif
-    if(!%(more_memory)s){
+
+    if(!%(more_memory)s) {
         cufftDestroy(fwd_plan);
-        fwd_plan = 0;
         have_fwd_plan = 0;
-    #ifdef CHECK
-    if(!check_success("cufftDestroy(fwd_plan)")){
-        Py_XDECREF(out);
-        out = NULL;
-        %(fail)s;
-    }
-    #endif
-    }
-    if(!%(more_memory)s){
+
+        #ifdef CHECK
+        if(!check_success("cufftDestroy(fwd_plan)")){
+            Py_XDECREF(out);
+            out = NULL;
+            %(fail)s;
+        }
+        #endif
+
         cufftDestroy(inv_plan);
-        inv_plan = 0;
         have_inv_plan = 0;
-    #ifdef CHECK
-    if(!check_success("cufftDestroy(inv_plan)")){
-        Py_XDECREF(out);
-        out = NULL;
-        %(fail)s;
-    }
-    #endif
+
+        #ifdef CHECK
+        if(!check_success("cufftDestroy(inv_plan)")){
+            Py_XDECREF(out);
+            out = NULL;
+            %(fail)s;
+        }
+        #endif
     }
 
     if(!%(lots_more_memory)s){
