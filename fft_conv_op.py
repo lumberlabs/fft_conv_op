@@ -530,8 +530,10 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
 
     // rearrange images and kernels to their new padded size, all contiguous
     // to each other, since that is what the batched fft requires right now
-    assert(padded_cols<=512);
-    while(padding_threads.x*padding_threads.y>512)padding_threads.x--;
+    assert(padded_cols <= 512);
+    while(padding_threads.x * padding_threads.y > 512) {
+        padding_threads.x--;
+    }
     timer = start_gpu_timer();
     pad_images_and_kernels<<<num_padded, padding_threads>>>(img->devdata,
                                                             kern->devdata,
