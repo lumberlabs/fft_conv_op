@@ -264,6 +264,7 @@ gpu_timer_t start_gpu_timer() {
     cudaEventCreate(&timer.start);
     cudaEventCreate(&timer.stop);
     cudaEventRecord(timer.start, 0);
+    return timer;
 }
 
 float stop_gpu_timer(gpu_timer_t timer) {
@@ -273,7 +274,7 @@ float stop_gpu_timer(gpu_timer_t timer) {
     cudaEventElapsedTime(&elapsed, timer.start, timer.stop);
     cudaEventDestroy(timer.start);
     cudaEventDestroy(timer.stop);
-    
+    return elapsed;
 }
 
  """ %locals()
