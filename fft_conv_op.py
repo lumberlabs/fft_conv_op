@@ -524,7 +524,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
         #endif
     }
 
-    device_mem_with_offset = device_mem;
+    device_mem_with_offset = (char *)device_mem;
     fft_input = (float *)(device_mem_with_offset + 0);
     transformed = (cufftComplex *)(device_mem_with_offset + fft_input_size);
     multiplied = (cufftComplex *)(device_mem_with_offset + fft_input_size + transformed_size);
@@ -584,7 +584,7 @@ if(!check_success("cufftExecR2C")){
 
         elementwise_image_kernel_multiply<<<dim_grid, dim_thread>>>(transformed,
                                                                     multiplied,
-                                                                    batch_size,
+                                                                    nbatch,
                                                                     BATCHES_PER_CHUNK,
                                                                     chunk_index,
                                                                     nkern,
