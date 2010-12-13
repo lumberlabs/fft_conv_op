@@ -480,12 +480,7 @@ printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already a
      old_padded_dimensions[1] = padded_dimensions[1];
      old_num_padded = num_padded;
 
-//SHOULD BE DONE AT EACH CALL
-#if DEBUG
-
-printf("GpuFFTConvOp before init inv[nbatch%%d][nkern%%d][nstack%%d][padded_rows%%d][padded_cols%%d]\\n",nbatch,nkern,nstack,padded_rows,padded_cols);
-    float inv[nbatch][nkern][nstack][padded_rows][padded_cols];
-#endif
+    //SHOULD BE DONE AT EACH CALL
 
     //create 4 temporary space in one cudaMalloc call to make it faster.
     fft_input_size = sizeof(float) * num_padded * padded_rows * padded_cols;
