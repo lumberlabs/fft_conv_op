@@ -236,7 +236,7 @@ __global__ void elementwise_image_kernel_multiply(cufftComplex *transformed,
 
 // TODO: is it possible to optimize this?
 // YES make memory read coallesced! We make more read then write
-//blockDim.x=nbatch
+//blockDim.x=num batches to process (<= chunk_size)
 //blockDim.y=nkern
 //blockThread.x=out_len or less
 //blockThread.y=out_wid
