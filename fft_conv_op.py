@@ -504,7 +504,7 @@ float stop_gpu_timer(gpu_timer_t timer) {
         elapsed = stop_gpu_timer(timer);
         fprintf(stderr, "cudaMalloc elapsed: %%.2f\\n", elapsed);
         #ifdef CHECK
-            fprintf(stderr, "cudaMalloc(device_mem, %%d + %%d + %%d + %%d = %%d)",
+            fprintf(stderr, "cudaMalloc(device_mem, %%d + %%d + %%d + %%d = %%d)\\n",
                     fft_input_size, transformed_size, multiplied_size, inverse_transformed_size,
                     fft_input_size + transformed_size + multiplied_size + inverse_transformed_size);
         #endif
