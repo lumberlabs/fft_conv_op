@@ -31,7 +31,7 @@ class GpuFFTConvOp(Op):
 
         """
         self.out_mode = output_mode
-        self.check = True#check
+        self.check = check
         self.more_memory = more_memory
         self.lots_more_memory = lots_more_memory
         if self.out_mode!='full':
