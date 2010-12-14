@@ -15,9 +15,9 @@ from theano.sandbox.cuda.basic_ops import as_cuda_ndarray_variable, CudaNdarrayT
 print "\n\n\n WARNING: CURRENT VERSION of GpuFFTConvOp is not well optimized! \n\n\n"
 
 class GpuFFTConvOp(Op):
-    __attrnames = ['out_mode', 'check', 'debug', 'more_memory']
+    __attrnames = ['out_mode', 'check', 'more_memory', 'lots_more_memory']
 
-    def __init__(self, output_mode='valid', check=False, debug=False,
+    def __init__(self, output_mode='valid', check=False,
                  more_memory=True, lots_more_memory=False):
         """
         :param more_memory: if True, we will keep the fft plan between each call
@@ -31,8 +31,7 @@ class GpuFFTConvOp(Op):
 
         """
         self.out_mode = output_mode
-        self.check=check
-        self.debug=debug
+        self.check = True#check
         self.more_memory = more_memory
         self.lots_more_memory = lots_more_memory
         if self.out_mode!='full':
@@ -96,10 +95,7 @@ class GpuFFTConvOp(Op):
         return ['cufft']
 
     def c_compile_args(self):
-        if self.debug:
-            return ['-DDEBUG']
-        else:
-            return []
+        return []
 
     #def c_code_cache_version(self):
     #    return (4)
@@ -303,11 +299,8 @@ float stop_gpu_timer(gpu_timer_t timer) {
         return """
     const int shared_avail = SHARED_SIZE-150;//144 is the biggest static shared size used with compiling this file.
     CudaNdarray *img = %(img)s;
-    CudaNdarray * kern = %(kern)s;
-#ifdef DEBUG
-printf("z=%%p\\n",%(z)s);//Why in mode FAST_RUN_NOGC, we don't have it already allocated?
-#endif
-    CudaNdarray * out = %(z)s;
+    CudaNdarray *kern = %(kern)s;
+    CudaNdarray *out = %(z)s;
 
     int out_dim[4];
     out_dim[0] = CudaNdarray_HOST_DIMS(img)[0];
