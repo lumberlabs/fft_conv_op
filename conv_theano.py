@@ -8,13 +8,14 @@ import numpy
 import theano
 import theano.tensor as T
 from theano.tensor.nnet import conv
+import fft_conv_op
 
 RUN_SPEED_TEST = True
 
 if __name__ == "__main__":
     fft = False
     check = False
-    iter = 1000
+    iter = 5
     valid = False
     mode = 'full'
     for param in sys.argv[1:]:
